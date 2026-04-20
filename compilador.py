@@ -44,7 +44,7 @@ def generar_dashboard():
     with open(nombre_archivo_html, 'r', encoding='utf-8') as f:
         html_content = f.read()
         
-    html_nuevo = re.sub(r'const RAW = \{.*?\};', f'const RAW = {json_nuevo};', html_content, flags=re.DOTALL)
+   html_nuevo = re.sub(r'const\s+RAW\s*=\s*\{.*?\};', f'const RAW = {json_nuevo};', html_content, flags=re.DOTALL)
     
     with open(nombre_archivo_html, 'w', encoding='utf-8') as f:
         f.write(html_nuevo)
