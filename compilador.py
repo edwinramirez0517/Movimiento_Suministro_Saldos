@@ -39,7 +39,7 @@ def generar_dashboard():
     json_nuevo = json.dumps({"s": s_data, "m": m_data}, ensure_ascii=False)
     
     # Nombre exacto de tu archivo actual
-    nombre_archivo_html = 'Dashboard_Gerencial_Final_Compadre_V44.html' 
+    nombre_archivo_html = 'index.html' 
     
     with open(nombre_archivo_html, 'r', encoding='utf-8') as f:
         html_content = f.read()
