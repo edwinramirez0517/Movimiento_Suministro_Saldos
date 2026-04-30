@@ -19,7 +19,6 @@
     <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
     <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
-    <!-- PapaParse para lectura del CSV -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 
     <style>
@@ -58,7 +57,6 @@
         .kpi-badge { font-size: 0.8rem; z-index: 1; background: rgba(255,255,255,0.25); padding: 4px 10px; border-radius: 20px; display: inline-block; width: fit-content; margin-top: auto; font-weight: 600; backdrop-filter: blur(5px); }
 
         .section-card { background: white; border-radius: 12px; padding: 25px; box-shadow: 0 4px 12px rgba(0,0,0,0.06); margin-bottom: 25px; display: flex; flex-direction: column;}
-        /* Títulos de gráficos más grandes */
         .section-card h6 { font-size: 1.3rem; font-weight: 900 !important; letter-spacing: 0.5px; margin-bottom: 25px; color: var(--brand-blue); text-transform: uppercase;}
         
         .table-responsive { max-height: 600px; overflow-y: auto; position: relative; border-radius: 8px; border: 1px solid #ddd; }
@@ -67,10 +65,18 @@
         
         tbody tr { transition: background-color 0.2s ease; cursor: pointer; }
         tbody tr:hover td { background-color: rgba(1, 32, 148, 0.08) !important; }
+        
+        /* Efecto de clic en filas para la tabla de movimientos */
+        #tablaMovsResumen tbody tr:hover td { background-color: rgba(225, 37, 27, 0.1) !important; cursor: pointer; }
 
         .nav-tabs { padding: 0 20px; border-bottom: 2px solid #ddd; }
         .nav-tabs .nav-link { font-weight: 800; color: #666; border: none; padding: 12px 25px; font-size: 0.95rem;}
         .nav-tabs .nav-link.active { color: var(--brand-blue); border-bottom: 4px solid var(--brand-blue); background: transparent; }
+
+        /* Mini KPIs en el detalle */
+        .mini-kpi { border-radius: 8px; padding: 10px 15px; color: white; box-shadow: 0 3px 6px rgba(0,0,0,0.1); margin-bottom: 15px;}
+        .mini-kpi h6 { margin: 0; font-size: 0.8rem; font-weight: 700; opacity: 0.9; text-transform: uppercase; color: white;}
+        .mini-kpi h4 { margin: 5px 0 0 0; font-size: 1.4rem; font-weight: 900; }
     </style>
 </head>
 <body>
@@ -84,7 +90,7 @@
 
         <div class="filter-panel px-4 bg-white">
             <div class="row g-2">
-                <div class="col-md-1">
+                <div class="col-md-2">
                     <label class="fw-bold small text-secondary">Año</label>
                     <select id="f-year" class="form-select select2" multiple></select>
                 </div>
@@ -111,13 +117,17 @@
                         <option value="cst">Costo (Lempiras)</option>
                     </select>
                 </div>
-                <div class="col-md-1 d-flex align-items-end gap-1">
+                <div class="col-md-1 d-none">
+                    <!-- Oculto para mantener estructura -->
                     <button class="btn btn-danger w-100 fw-bold py-2 shadow-sm" id="btn-reset" title="Limpiar Filtros"><i class="fa-solid fa-eraser"></i></button>
                 </div>
             </div>
-            <!-- Filtro de Naturaleza -->
-            <div class="row mt-2">
-                <div class="col-md-12 text-center">
+            <!-- Boton de Reset Real Abajo a la derecha y Filtro de Naturaleza -->
+            <div class="row mt-2 align-items-center">
+                <div class="col-md-3">
+                    <button class="btn btn-danger fw-bold shadow-sm" id="btn-reset-real" title="Limpiar Todos los Filtros"><i class="fa-solid fa-eraser me-1"></i> Borrar Filtros</button>
+                </div>
+                <div class="col-md-6 text-center">
                      <div class="btn-group shadow-sm" role="group" aria-label="Filtro Tipo Flujo">
                         <input type="radio" class="btn-check" name="btnFlujo" id="btnFlujoAmbos" autocomplete="off" value="all" checked>
                         <label class="btn btn-outline-primary fw-bold" for="btnFlujoAmbos" style="width: 200px;"><i class="fa-solid fa-scale-balanced me-1"></i> Balance Total</label>
@@ -180,7 +190,6 @@
             <li class="nav-item" role="presentation">
                 <button class="nav-link" id="t-tab" data-bs-toggle="tab" data-bs-target="#tab-t" type="button" role="tab" aria-controls="tab-t" aria-selected="false"><i class="fa-solid fa-table-list me-1"></i> Auditoría de Detalle</button>
             </li>
-            <!-- NUEVA PESTAÑA: Movimientos -->
             <li class="nav-item" role="presentation">
                 <button class="nav-link" id="m-tab" data-bs-toggle="tab" data-bs-target="#tab-m" type="button" role="tab" aria-controls="tab-m" aria-selected="false"><i class="fa-solid fa-truck-fast me-1"></i> Historial de Movimientos</button>
             </li>
@@ -188,7 +197,7 @@
 
         <div class="tab-content bg-transparent p-4" id="mainTabsContent">
             <!-- Pestaña de Gráficos -->
-            <div class="tab-pane fade show active" id="tab-g" role="tabpanel" aria-labelledby="g-tab">
+            <div class="tab-pane fade show active" id="tab-g" role="tabpanel">
                 <div class="section-card">
                     <h6 class="text-center"><i class="fa-solid fa-scale-unbalanced me-2"></i>RESPIRACIÓN LOGÍSTICA (LÍNEAS CRUZADAS: ENTRADAS VS SALIDAS)</h6>
                     <hr class="mt-0 mb-4" style="opacity: 0.1;">
@@ -229,7 +238,7 @@
             </div>
 
             <!-- Pestaña de Auditoría (Saldos) -->
-            <div class="tab-pane fade" id="tab-t" role="tabpanel" aria-labelledby="t-tab">
+            <div class="tab-pane fade" id="tab-t" role="tabpanel">
                 <div class="section-card" style="padding-bottom: 0;">
                     <div class="table-responsive">
                         <table id="tablaDetalle" class="table table-striped table-bordered w-100 mb-0">
@@ -249,23 +258,80 @@
                 </div>
             </div>
 
-            <!-- Pestaña de Movimientos -->
-            <div class="tab-pane fade" id="tab-m" role="tabpanel" aria-labelledby="m-tab">
-                <div class="section-card" style="padding-bottom: 0;">
+            <!-- Pestaña de Movimientos (Maestro-Detalle) -->
+            <div class="tab-pane fade" id="tab-m" role="tabpanel">
+                <!-- VISTA RESUMEN (MAESTRO) -->
+                <div id="view-resumen" class="section-card" style="padding-bottom: 0;">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="m-0 text-secondary"><i class="fa-solid fa-table me-2"></i>Resumen General (Click en una fila para ver detalle)</h6>
+                        <button id="btn-ver-todo-detalle" class="btn btn-outline-primary fw-bold shadow-sm"><i class="fa-solid fa-expand me-1"></i>Ver Todo a Detalle</button>
+                    </div>
                     <div class="table-responsive">
-                        <table id="tablaMovimientos" class="table table-striped table-bordered w-100 mb-0">
+                        <table id="tablaMovsResumen" class="table table-hover table-striped table-bordered w-100 mb-0">
                             <thead>
                                 <tr>
                                     <th>Mes</th>
                                     <th>Departamento</th>
-                                    <th>Categoría</th>
-                                    <th>Proveedor</th>
-                                    <th>Entradas (+)</th>
-                                    <th>Salidas (-)</th>
+                                    <th class="text-danger">Salidas 2025</th>
+                                    <th class="text-danger">Salidas 2026</th>
+                                    <th class="text-success">Entradas 2025</th>
+                                    <th class="text-success">Entradas 2026</th>
                                 </tr>
                             </thead>
                             <tbody></tbody>
                         </table>
+                    </div>
+                </div>
+
+                <!-- VISTA DETALLE (DRILL-DOWN) -->
+                <div id="view-detalle" style="display:none;">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <button id="btn-volver-resumen" class="btn btn-secondary fw-bold shadow-sm"><i class="fa-solid fa-arrow-left me-1"></i> Volver al Resumen</button>
+                        <h5 id="titulo-detalle" class="m-0 fw-bold" style="color:var(--brand-blue)">Detalle de Movimientos</h5>
+                    </div>
+                    
+                    <!-- Tarjetas de Totales del Detalle -->
+                    <div class="row mb-4">
+                        <div class="col-md-3">
+                            <div class="mini-kpi" style="background-color: rgba(225, 37, 27, 0.9);">
+                                <h6>Total Salidas 2025</h6><h4 id="det-out-25">0</h4>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="mini-kpi" style="background-color: #E1251B;">
+                                <h6>Total Salidas 2026</h6><h4 id="det-out-26">0</h4>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="mini-kpi" style="background-color: rgba(0, 180, 219, 0.9);">
+                                <h6>Total Entradas 2025</h6><h4 id="det-in-25">0</h4>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="mini-kpi" style="background-color: #0082c8;">
+                                <h6>Total Entradas 2026</h6><h4 id="det-in-26">0</h4>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="section-card" style="padding-bottom: 0;">
+                        <div class="table-responsive">
+                            <table id="tablaMovsDetalle" class="table table-striped table-bordered w-100 mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>Mes</th>
+                                        <th>Departamento</th>
+                                        <th>Categoría</th>
+                                        <th>Grupo</th>
+                                        <th class="text-danger">Salidas 2025</th>
+                                        <th class="text-danger">Salidas 2026</th>
+                                        <th class="text-success">Entradas 2025</th>
+                                        <th class="text-success">Entradas 2026</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>
