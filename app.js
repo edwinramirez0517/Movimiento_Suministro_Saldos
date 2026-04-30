@@ -3,9 +3,9 @@ Chart.register(ChartDataLabels);
 // Variables Globales
 let rawSaldos = [];
 let rawMovimientos = [];
+let filteredMovsData = []; // Guarda la data filtrada para poder hacer el drill-down
 let charts = {};
-let tableDetalle;
-let tableMovimientos;
+let tableDetalle, tableMovsResumen, tableMovsDetalle;
 
 const MESES_ORDEN = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'];
 
@@ -61,10 +61,24 @@ $(document).ready(function () {
         $('#loader-overlay').html('<h4 class="text-danger fw-bold">Error al cargar datos. Verifique archivos CSV.</h4>');
     });
 
-    $('#btn-reset').click(function() {
+    $('#btn-reset-real').click(function() {
         $('.select2').val(null).trigger('change');
         $('#btnFlujoAmbos').prop('checked', true).trigger('change');
         $('#f-metric').val('und').trigger('change.select2'); 
+    });
+
+    // EVENTOS PARA DRILL-DOWN (MAESTRO-DETALLE)
+    $('#tablaMovsResumen tbody').on('click', 'tr', function () {
+        if(!tableMovsResumen) return;
+        let data = tableMovsResumen.row(this).data();
+        if(data) abrirDetalleMovimientos(data.Mes, data.Departamento);
+    });
+
+    $('#btn-ver-todo-detalle').click(function() { abrirDetalleMovimientos('TODOS', 'TODOS'); });
+    
+    $('#btn-volver-resumen').click(function() { 
+        $('#view-detalle').hide(); 
+        $('#view-resumen').fadeIn(); 
     });
 });
 
@@ -143,15 +157,17 @@ function aplicarFiltrosYRenderizar() {
     // 4.2 Filtrar MOVIMIENTOS
     let totalPos = 0, totalNeg = 0;
     let consumoPorDepto = {}, consumoPorCat = {}, consumoPorProv = {}, consumoPorGrp = {};
-    let movsTabla = [];
     
     let lineIn25 = Array(12).fill(0), lineOut25 = Array(12).fill(0);
     let lineIn26 = Array(12).fill(0), lineOut26 = Array(12).fill(0);
+    
+    filteredMovsData = []; // Reseteamos la data filtrada global
+    let resumenMap = {}; // Para agrupar la tabla Resumen
 
     const metricKey = fMetric === 'und' ? 'UNIDAD' : 'COSTO';
 
     rawMovimientos.forEach(row => {
-        let mesStr = (row['MES'] || "").toUpperCase();
+        let mesStr = (row['MES'] || "SIN ESPECIFICAR").toUpperCase();
         let cat = reglas.cleanName(row['CATEGORIA']);
         let prov = reglas.cleanName(row['PROVEEDOR']);
         let depto = reglas.cleanName(row['DEPARTAMENTO2']);
@@ -164,6 +180,8 @@ function aplicarFiltrosYRenderizar() {
 
         let mesIdx = MESES_ORDEN.indexOf(mesStr);
         let filaPos = 0, filaNeg = 0;
+        
+        let out25 = 0, out26 = 0, in25 = 0, in26 = 0;
 
         Object.keys(row).forEach(k => {
             if (!k.includes(metricKey)) return; 
@@ -173,7 +191,6 @@ function aplicarFiltrosYRenderizar() {
             let isPos = k.includes('POS');
             let isNeg = k.includes('NEG'); 
             
-            // Valor con signo real 
             let val = reglas.cleanNumber(row[k]);
 
             if (fYear.length > 0) {
@@ -184,7 +201,13 @@ function aplicarFiltrosYRenderizar() {
             if (isPos) { totalPos += val; filaPos += val; }
             if (isNeg) { totalNeg += val; filaNeg += val; }
 
-            // Llenar gráfico de líneas (dibujado en positivo para no caer al subsuelo)
+            // Guardamos para la tabla de resumen
+            if(is2025 && isNeg) out25 += val;
+            if(is2026 && isNeg) out26 += val;
+            if(is2025 && isPos) in25 += val;
+            if(is2026 && isPos) in26 += val;
+
+            // Gráfico de líneas (Math.abs para dibujo)
             if (mesIdx >= 0) {
                 if(is2025 && isPos) lineIn25[mesIdx] += Math.abs(val);
                 if(is2025 && isNeg) lineOut25[mesIdx] += Math.abs(val);
@@ -192,6 +215,22 @@ function aplicarFiltrosYRenderizar() {
                 if(is2026 && isNeg) lineOut26[mesIdx] += Math.abs(val);
             }
         });
+
+        // Guardamos la fila si tuvo movimiento para el Detail
+        if(out25 !== 0 || out26 !== 0 || in25 !== 0 || in26 !== 0) {
+            filteredMovsData.push({
+                Mes: mesStr, Departamento: depto, Categoria: cat, Grupo: grp, Proveedor: prov,
+                Out25: out25, Out26: out26, In25: in25, In26: in26
+            });
+
+            // Agregamos al Resumen
+            let keyResumen = mesStr + '|' + depto;
+            if(!resumenMap[keyResumen]) resumenMap[keyResumen] = { Mes: mesStr, Departamento: depto, Out25: 0, Out26: 0, In25: 0, In26: 0 };
+            resumenMap[keyResumen].Out25 += out25;
+            resumenMap[keyResumen].Out26 += out26;
+            resumenMap[keyResumen].In25 += in25;
+            resumenMap[keyResumen].In26 += in26;
+        }
 
         // Sumar Tops basados en el flujo.
         let valorTops = 0;
@@ -202,18 +241,6 @@ function aplicarFiltrosYRenderizar() {
         consumoPorCat[cat] = (consumoPorCat[cat] || 0) + valorTops;
         consumoPorProv[prov] = (consumoPorProv[prov] || 0) + valorTops;
         consumoPorGrp[grp] = (consumoPorGrp[grp] || 0) + valorTops;
-
-        // Construir tabla de movimientos
-        if (filaPos !== 0 || filaNeg !== 0) {
-            movsTabla.push({
-                Mes: mesStr,
-                Departamento: depto,
-                Categoria: cat,
-                Proveedor: prov,
-                Entradas: filaPos,
-                Salidas: filaNeg
-            });
-        }
     });
 
     // 4.3 Inyectar Valores a HTML
@@ -231,7 +258,13 @@ function aplicarFiltrosYRenderizar() {
     $('#k-top-c').text(topCat.length > 0 ? topCat[0][0].substring(0,25) : '-');
 
     actualizarTablaSaldos(saldosTabla);
-    actualizarTablaMovimientos(movsTabla, prefix, configNum);
+    
+    // Si la vista de detalle está abierta, forzar a regresar a la de resumen al filtrar global
+    $('#view-detalle').hide(); 
+    $('#view-resumen').show();
+    
+    actualizarTablaMovsResumen(Object.values(resumenMap), prefix, configNum);
+
     actualizarGraficos({
         lineIn25, lineOut25, lineIn26, lineOut26,
         consumoPorDepto, consumoPorCat, consumoPorProv, consumoPorGrp,
@@ -267,35 +300,83 @@ function actualizarTablaSaldos(datosTabla) {
     });
 }
 
-// 5.1 DATA TABLES (Movimientos)
-function actualizarTablaMovimientos(datosTabla, prefix, configNum) {
-    if($.fn.DataTable.isDataTable('#tablaMovimientos')) {
-        tableMovimientos.clear().rows.add(datosTabla).draw();
+// 5.1 DATA TABLES (Movimientos - Resumen)
+function actualizarTablaMovsResumen(datosTabla, prefix, configNum) {
+    if($.fn.DataTable.isDataTable('#tablaMovsResumen')) {
+        tableMovsResumen.clear().rows.add(datosTabla).draw();
         return;
     }
-    tableMovimientos = $('#tablaMovimientos').DataTable({
+    tableMovsResumen = $('#tablaMovsResumen').DataTable({
         data: datosTabla,
-        pageLength: 15,
+        pageLength: 10,
         language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json' },
         order: [[0, 'asc']], 
         columns: [
             { data: 'Mes', defaultContent: '-' },
             { data: 'Departamento', defaultContent: '-' },
-            { data: 'Categoria', defaultContent: '-' },
-            { data: 'Proveedor', defaultContent: '-' },
-            { 
-                data: 'Entradas', className: 'num text-success fw-bold',
-                render: (data, t) => t==='display' ? (data > 0 ? prefix + data.toLocaleString('en-US', configNum) : '-') : data
-            },
-            { 
-                data: 'Salidas', className: 'num text-danger fw-bold',
-                render: (data, t) => t==='display' ? (data < 0 ? prefix + data.toLocaleString('en-US', configNum) : '-') : data
-            }
+            { data: 'Out25', className: 'num text-danger fw-bold', render: (data, t) => t==='display' ? (data !== 0 ? prefix + data.toLocaleString('en-US', configNum) : '-') : data },
+            { data: 'Out26', className: 'num text-danger fw-bold', render: (data, t) => t==='display' ? (data !== 0 ? prefix + data.toLocaleString('en-US', configNum) : '-') : data },
+            { data: 'In25', className: 'num text-success fw-bold', render: (data, t) => t==='display' ? (data !== 0 ? prefix + data.toLocaleString('en-US', configNum) : '-') : data },
+            { data: 'In26', className: 'num text-success fw-bold', render: (data, t) => t==='display' ? (data !== 0 ? prefix + data.toLocaleString('en-US', configNum) : '-') : data }
         ]
     });
 }
 
-// 6. GRÁFICOS (CHART.JS) ESTÉTICA 100% CORREGIDA
+// 5.2 DRILL-DOWN: VISTA DETALLE
+function abrirDetalleMovimientos(mes, depto) {
+    let titulo = mes === 'TODOS' ? 'Historial Completo' : `Detalle: ${mes} - ${depto}`;
+    $('#titulo-detalle').text(titulo);
+
+    let prefix = $('#f-metric').val() === 'cst' ? 'L ' : '';
+    let configNum = $('#f-metric').val() === 'cst' ? {minimumFractionDigits: 2, maximumFractionDigits: 2} : {maximumFractionDigits: 0};
+
+    let dataDetalle = [];
+    let sumOut25 = 0, sumOut26 = 0, sumIn25 = 0, sumIn26 = 0;
+
+    filteredMovsData.forEach(d => {
+        if(mes !== 'TODOS' && d.Mes !== mes) return;
+        if(depto !== 'TODOS' && d.Departamento !== depto) return;
+        
+        sumOut25 += d.Out25; sumOut26 += d.Out26;
+        sumIn25 += d.In25; sumIn26 += d.In26;
+        
+        dataDetalle.push(d);
+    });
+
+    // Actualizar Mini KPIs
+    $('#det-out-25').text(prefix + sumOut25.toLocaleString('en-US', configNum));
+    $('#det-out-26').text(prefix + sumOut26.toLocaleString('en-US', configNum));
+    $('#det-in-25').text(prefix + sumIn25.toLocaleString('en-US', configNum));
+    $('#det-in-26').text(prefix + sumIn26.toLocaleString('en-US', configNum));
+
+    if($.fn.DataTable.isDataTable('#tablaMovsDetalle')) {
+        tableMovsDetalle.clear().rows.add(dataDetalle).draw();
+    } else {
+        tableMovsDetalle = $('#tablaMovsDetalle').DataTable({
+            data: dataDetalle,
+            pageLength: 15,
+            language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json' },
+            order: [[4, 'asc']], // Ordenar por Salidas 25
+            columns: [
+                { data: 'Mes', defaultContent: '-' },
+                { data: 'Departamento', defaultContent: '-' },
+                { data: 'Categoria', defaultContent: '-' },
+                { data: 'Grupo', defaultContent: '-' },
+                { data: 'Out25', className: 'num text-danger', render: (data, t) => t==='display' ? (data !== 0 ? prefix + data.toLocaleString('en-US', configNum) : '-') : data },
+                { data: 'Out26', className: 'num text-danger', render: (data, t) => t==='display' ? (data !== 0 ? prefix + data.toLocaleString('en-US', configNum) : '-') : data },
+                { data: 'In25', className: 'num text-success', render: (data, t) => t==='display' ? (data !== 0 ? prefix + data.toLocaleString('en-US', configNum) : '-') : data },
+                { data: 'In26', className: 'num text-success', render: (data, t) => t==='display' ? (data !== 0 ? prefix + data.toLocaleString('en-US', configNum) : '-') : data }
+            ]
+        });
+    }
+
+    // Transición visual
+    $('#view-resumen').hide();
+    $('#view-detalle').fadeIn();
+}
+
+
+// 6. GRÁFICOS (CHART.JS) ESTÉTICA 100% CORREGIDA (NEGRO Y NEGRITA)
 function actualizarGraficos(gData) {
     Chart.defaults.font.family = "'Segoe UI', Arial, sans-serif";
     Object.values(charts).forEach(c => c.destroy()); 
@@ -354,7 +435,7 @@ function actualizarGraficos(gData) {
             },
             options: {
                 responsive: true, maintainAspectRatio: false,
-                layout: { padding: { top: 65, bottom: 0, right: 10, left: 10 } }, // Mucho espacio arriba para que quepa el 45 grados
+                layout: { padding: { top: 65, bottom: 0, right: 10, left: 10 } }, 
                 scales: { 
                     x: { 
                         grid: { display: false }, 
