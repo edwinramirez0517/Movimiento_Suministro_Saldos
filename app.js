@@ -8,7 +8,7 @@ let tableDetalle;
 
 const MESES_ORDEN = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'];
 
-// 1. LIMPIEZA DE NÚMEROS
+// 1. LIMPIEZA DE NÚMEROS Y NOMBRES
 const reglas = {
     cleanNumber: (val) => {
         if (val === null || val === undefined || val === '') return 0;
@@ -17,6 +17,14 @@ const reglas = {
         const strNum = val.toString().replace(/[L$,\s]/gi, '').trim();
         const num = parseFloat(strNum);
         return isNaN(num) ? 0 : num;
+    },
+    
+    // Función para estandarizar los "0" y vacíos en los textos
+    cleanName: (name) => {
+        if (!name || name === '0' || name === 0 || name.toString().trim() === '') {
+            return "SIN ESPECIFICAR";
+        }
+        return name.toString().toUpperCase().trim();
     }
 };
 
@@ -64,16 +72,16 @@ function prepararFiltrosDropdowns() {
     let setTienda = new Set(), setCat = new Set(), setProv = new Set(), setDep = new Set();
     
     rawSaldos.forEach(r => { 
-        if(r['DIVISION']) setTienda.add(r['DIVISION']);
-        if(r['CATEGORIA']) setCat.add(r['CATEGORIA']); 
-        if(r['PROVEEDOR']) setProv.add(r['PROVEEDOR']); 
+        if(r['DIVISION']) setTienda.add(reglas.cleanName(r['DIVISION']));
+        if(r['CATEGORIA']) setCat.add(reglas.cleanName(r['CATEGORIA'])); 
+        if(r['PROVEEDOR']) setProv.add(reglas.cleanName(r['PROVEEDOR'])); 
     });
     
     rawMovimientos.forEach(r => { 
-        if(r['DEPARTAMENTO2']) setDep.add(r['DEPARTAMENTO2']); 
-        if(r['DIVISION']) setTienda.add(r['DIVISION']);
-        if(r['CATEGORIA']) setCat.add(r['CATEGORIA']);
-        if(r['PROVEEDOR']) setProv.add(r['PROVEEDOR']);
+        if(r['DEPARTAMENTO2']) setDep.add(reglas.cleanName(r['DEPARTAMENTO2'])); 
+        if(r['DIVISION']) setTienda.add(reglas.cleanName(r['DIVISION']));
+        if(r['CATEGORIA']) setCat.add(reglas.cleanName(r['CATEGORIA']));
+        if(r['PROVEEDOR']) setProv.add(reglas.cleanName(r['PROVEEDOR']));
     });
 
     const llenar = (id, dataSet) => {
@@ -113,9 +121,13 @@ function aplicarFiltrosYRenderizar() {
     let saldosTabla = [];
     
     rawSaldos.forEach(row => {
-        if (fDiv.length && !fDiv.includes(row['DIVISION'])) return;
-        if (fCat.length && !fCat.includes(row['CATEGORIA'])) return;
-        if (fProv.length && !fProv.includes(row['PROVEEDOR'])) return;
+        let div = reglas.cleanName(row['DIVISION']);
+        let cat = reglas.cleanName(row['CATEGORIA']);
+        let prov = reglas.cleanName(row['PROVEEDOR']);
+
+        if (fDiv.length && !fDiv.includes(div)) return;
+        if (fCat.length && !fCat.includes(cat)) return;
+        if (fProv.length && !fProv.includes(prov)) return;
 
         let stock = reglas.cleanNumber(row['SALDOUNDTOTAL']);
         let costo = reglas.cleanNumber(row['TOTAL COSTO UND.']);
@@ -124,10 +136,10 @@ function aplicarFiltrosYRenderizar() {
         totalCosto += costo;
 
         saldosTabla.push({
-            Division: row['DIVISION'] || "SIN DIVISION",
-            Categoria: row['CATEGORIA'] || "",
-            Grupo: row['GRUPO'] || "",
-            Proveedor: row['PROVEEDOR'] || "SIN ESPECIFICAR",
+            Division: div,
+            Categoria: cat,
+            Grupo: reglas.cleanName(row['GRUPO']),
+            Proveedor: prov,
             Stock: stock,
             Costo: costo
         });
@@ -144,18 +156,19 @@ function aplicarFiltrosYRenderizar() {
 
     rawMovimientos.forEach(row => {
         let mesStr = (row['MES'] || "").toUpperCase();
+        let div = reglas.cleanName(row['DIVISION']);
+        let cat = reglas.cleanName(row['CATEGORIA']);
+        let prov = reglas.cleanName(row['PROVEEDOR']);
+        let depto = reglas.cleanName(row['DEPARTAMENTO2']);
+        let grp = reglas.cleanName(row['GRUPO']);
+
         if (fMes.length && !fMes.includes(mesStr)) return;
-        if (fDiv.length && !fDiv.includes(row['DIVISION'])) return;
-        if (fCat.length && !fCat.includes(row['CATEGORIA'])) return;
-        if (fProv.length && !fProv.includes(row['PROVEEDOR'])) return;
-        if (fDep.length && !fDep.includes(row['DEPARTAMENTO2'])) return;
+        if (fDiv.length && !fDiv.includes(div)) return;
+        if (fCat.length && !fCat.includes(cat)) return;
+        if (fProv.length && !fProv.includes(prov)) return;
+        if (fDep.length && !fDep.includes(depto)) return;
 
         let mesIdx = MESES_ORDEN.indexOf(mesStr);
-        let depto = row['DEPARTAMENTO2'] || "SIN ASIGNAR";
-        let cat = row['CATEGORIA'] || "SIN ASIGNAR";
-        let prov = row['PROVEEDOR'] || "SIN ASIGNAR";
-        let grp = row['GRUPO'] || "SIN ASIGNAR";
-
         let filaPos = 0, filaNeg = 0;
 
         Object.keys(row).forEach(k => {
@@ -166,7 +179,7 @@ function aplicarFiltrosYRenderizar() {
             let isPos = k.includes('POS');
             let isNeg = k.includes('NEG'); 
             
-            // Extraer el valor EXACTO con su signo original (NO usar Math.abs aquí)
+            // Valor con signo real (Permite que Excel reste devoluciones)
             let val = reglas.cleanNumber(row[k]);
 
             if (fYear.length > 0) {
@@ -174,11 +187,10 @@ function aplicarFiltrosYRenderizar() {
                 if (is2026 && !fYear.includes('2026')) return;
             }
 
-            // Suma con signos reales (permitiendo que devoluciones neteen el valor)
             if (isPos) { totalPos += val; filaPos += val; }
             if (isNeg) { totalNeg += val; filaNeg += val; }
 
-            // Llenar gráfico de líneas (usamos valor absoluto en la línea para que no dibuje para abajo)
+            // Llenar gráfico de líneas (usamos Math.abs para el dibujo de la línea)
             if (mesIdx >= 0) {
                 if(is2025 && isPos) lineIn25[mesIdx] += Math.abs(val);
                 if(is2025 && isNeg) lineOut25[mesIdx] += Math.abs(val);
@@ -187,7 +199,7 @@ function aplicarFiltrosYRenderizar() {
             }
         });
 
-        // Sumar Tops basados en el flujo. Usamos el valor real neto (sumado con sus signos)
+        // Sumar Tops basados en el flujo.
         let valorTops = 0;
         if (fFlujo === 'all' || fFlujo === 'out') valorTops += filaNeg; 
         if (fFlujo === 'in') valorTops += filaPos; 
@@ -198,7 +210,7 @@ function aplicarFiltrosYRenderizar() {
         consumoPorGrp[grp] = (consumoPorGrp[grp] || 0) + valorTops;
     });
 
-    // 4.3 Inyectar Valores a HTML (Aquí sí aplicamos Math.abs solo para mostrarlos en la tarjeta en positivo)
+    // 4.3 Inyectar Valores a HTML
     let prefix = fMetric === 'cst' ? 'L ' : '';
     let configNum = fMetric === 'cst' ? {minimumFractionDigits: 2, maximumFractionDigits: 2} : {maximumFractionDigits: 0};
 
@@ -207,7 +219,6 @@ function aplicarFiltrosYRenderizar() {
     $('#k-pos').text(prefix + Math.abs(totalPos).toLocaleString('en-US', configNum));
     $('#k-neg').text(prefix + Math.abs(totalNeg).toLocaleString('en-US', configNum));
 
-    // Para los Tops, ordenar por el valor absoluto mayor (para que los consumos más altos estén de primero)
     let topDepto = Object.entries(consumoPorDepto).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1]));
     let topCat = Object.entries(consumoPorCat).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1]));
     $('#k-top-d').text(topDepto.length > 0 ? topDepto[0][0].substring(0,25) : '-');
@@ -250,28 +261,15 @@ function actualizarTabla(datosTabla) {
     });
 }
 
-// 6. GRÁFICOS (CHART.JS) AJUSTADOS (Rotación a 45 grados y sin amontonarse)
+// 6. GRÁFICOS (CHART.JS) AJUSTADOS
 function actualizarGraficos(gData) {
     Chart.defaults.font.family = "'Segoe UI', Arial, sans-serif";
     Object.values(charts).forEach(c => c.destroy()); 
 
     const { lineIn25, lineOut25, lineIn26, lineOut26, fFlujo, fYear, prefix, configNum } = gData;
 
-    // Config Base Global
-    const optBase = {
-        responsive: true, maintainAspectRatio: false,
-        layout: { padding: { top: 35, bottom: 10, right: 10, left: 10 } },
-        scales: { 
-            x: { grid: { display: false } }, 
-            y: { grid: { display: false }, ticks: { display: false }, border: { display: false } } 
-        },
-        plugins: {
-            legend: { display: false },
-            datalabels: { display: false } // Lo apagamos globalmente, y lo encendemos solo en las barras
-        }
-    };
-
-    // --- GRÁFICO 1: RESPIRACIÓN LOGÍSTICA ---
+    // --- GRÁFICO 1: RESPIRACIÓN LOGÍSTICA (LÍNEAS) ---
+    // Desactivamos los datalabels para que las líneas se vean limpias.
     let dsLine = [];
     let show25 = fYear.length === 0 || fYear.includes('2025');
     let show26 = fYear.length === 0 || fYear.includes('2026');
@@ -292,74 +290,116 @@ function actualizarGraficos(gData) {
     charts.cResp = new Chart(document.getElementById('c-respiracion').getContext('2d'), {
         type: 'line',
         data: { labels: MESES_ORDEN, datasets: dsLine },
-        options: { ...optBase, plugins: { legend: { display: true, position: 'bottom' } } }
+        options: { 
+            responsive: true, maintainAspectRatio: false,
+            layout: { padding: { top: 20, bottom: 10, right: 20, left: 10 } },
+            scales: { x: { grid: { display: false } }, y: { grid: { display: false }, ticks: { display: false }, border: { display: false } } },
+            plugins: { 
+                legend: { display: true, position: 'bottom' }, 
+                datalabels: { display: false }, // APAGADO PARA LIMPIEZA
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            let label = context.dataset.label || '';
+                            if (label) { label += ': '; }
+                            if (context.parsed.y !== null) {
+                                label += prefix + context.parsed.y.toLocaleString('en-US', configNum);
+                            }
+                            return label;
+                        }
+                    }
+                }
+            } 
+        }
     });
 
-    // --- GRÁFICOS BARRAS VERTICALES (Etiquetas a 45 grados) ---
+    // --- GRÁFICOS BARRAS VERTICALES (-45 Grados desde el centro) ---
     const renderBarV = (id, dataObj, color) => {
         let sorted = Object.entries(dataObj).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1])).slice(0, 12);
         
-        let optV = JSON.parse(JSON.stringify(optBase));
-        optV.layout = { padding: { top: 60, bottom: 0, right: 10, left: 10 } }; 
-        optV.scales.x.ticks = { maxRotation: 45, minRotation: 45, font: { size: 9 } }; // Forzar 45 grados abajo
-        
-        // Ajuste perfecto del Datalabel a 45 grados arriba de la barra
-        optV.plugins.datalabels = {
-            display: true,
-            anchor: 'end',
-            align: 'top',
-            rotation: -45, // Rota el número 45 grados hacia la izquierda
-            offset: -10, // Lo baja un poco hacia el centro de la barra
-            color: '#111',
-            font: { weight: 'bold', size: 10 },
-            formatter: v => {
-                let absV = Math.abs(v);
-                return absV > 0 ? prefix + absV.toLocaleString('en-US', configNum) : '';
-            }
-        };
-
         charts[id] = new Chart(document.getElementById(id).getContext('2d'), {
             type: 'bar',
             data: {
                 labels: sorted.map(d => d[0].length > 20 ? d[0].substring(0, 20) + '...' : d[0]),
                 datasets: [{ data: sorted.map(d => Math.abs(d[1])), backgroundColor: color, borderRadius: 4 }]
             },
-            options: optV
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                layout: { padding: { top: 75, bottom: 0, right: 10, left: 10 } }, 
+                scales: { 
+                    x: { grid: { display: false }, ticks: { maxRotation: 45, minRotation: 45, font: { size: 9 } } }, 
+                    y: { grid: { display: false }, ticks: { display: false }, border: { display: false } } 
+                },
+                plugins: {
+                    legend: { display: false },
+                    datalabels: {
+                        display: true,
+                        anchor: 'end',
+                        align: 'center', // Alinea el punto de anclaje al centro
+                        rotation: -45, // Rota el número -45 grados
+                        offset: 35, // Desplaza hacia arriba para salir de la barra
+                        color: '#111',
+                        font: { weight: 'bold', size: 9 }, // Letra más pequeña
+                        formatter: v => {
+                            let absV = Math.abs(v);
+                            return absV > 0 ? prefix + absV.toLocaleString('en-US', configNum) : '';
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return prefix + context.parsed.y.toLocaleString('en-US', configNum);
+                            }
+                        }
+                    }
+                }
+            }
         });
     };
 
     renderBarV('c-dept', gData.consumoPorDepto, '#E1251B');
     renderBarV('c-cat', gData.consumoPorCat, '#012094');
 
-    // --- GRÁFICOS BARRAS HORIZONTALES (Sin Distorsión) ---
+    // --- GRÁFICOS BARRAS HORIZONTALES ---
     const renderBarH = (id, dataObj, color) => {
         let sorted = Object.entries(dataObj).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1])).slice(0, 15);
-        let optH = JSON.parse(JSON.stringify(optBase));
-        
-        optH.indexAxis = 'y';
-        optH.layout = { padding: { top: 10, bottom: 10, right: 100, left: 10 } }; 
-        optH.scales.y = { grid: { display: false }, ticks: { display: true, font: { size: 9 } }, border: { display: false } };
-        optH.scales.x = { grid: { display: false }, ticks: { display: false }, border: { display: false } };
-        
-        optH.plugins.datalabels = {
-            display: true,
-            anchor: 'end',
-            align: 'right',
-            color: '#333',
-            font: { weight: 'bold', size: 10 },
-            formatter: v => {
-                let absV = Math.abs(v);
-                return absV > 0 ? prefix + absV.toLocaleString('en-US', configNum) : '';
-            }
-        };
 
         charts[id] = new Chart(document.getElementById(id).getContext('2d'), {
             type: 'bar',
             data: {
-                labels: sorted.map(d => d[0].length > 25 ? d[0].substring(0, 25) + '...' : d[0]),
+                labels: sorted.map(d => d[0].length > 30 ? d[0].substring(0, 30) + '...' : d[0]),
                 datasets: [{ data: sorted.map(d => Math.abs(d[1])), backgroundColor: color, borderRadius: 4, barPercentage: 0.8 }]
             },
-            options: optH
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                indexAxis: 'y', // Convertir a Horizontal
+                layout: { padding: { top: 10, bottom: 10, right: 120, left: 10 } }, // Mucho espacio a la derecha
+                scales: { 
+                    x: { grid: { display: false }, ticks: { display: false }, border: { display: false } },
+                    y: { grid: { display: false }, ticks: { display: true, font: { size: 9 }, color: '#333' }, border: { display: false } } 
+                },
+                plugins: {
+                    legend: { display: false },
+                    datalabels: {
+                        display: true,
+                        anchor: 'end',
+                        align: 'right', // Se ubica a la derecha de la barra
+                        color: '#111',
+                        font: { weight: 'bold', size: 9 },
+                        formatter: v => {
+                            let absV = Math.abs(v);
+                            return absV > 0 ? prefix + absV.toLocaleString('en-US', configNum) : '';
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return prefix + context.parsed.x.toLocaleString('en-US', configNum);
+                            }
+                        }
+                    }
+                }
+            }
         });
     };
 
