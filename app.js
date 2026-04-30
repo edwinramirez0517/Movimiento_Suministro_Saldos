@@ -1,19 +1,18 @@
-// Registramos el plugin Datalabels globalmente para los gráficos
 Chart.register(ChartDataLabels);
 
 // Variables Globales
 let rawSaldos = [];
 let rawMovimientos = [];
-let masterData = [];
-let tableDetalle;
 let charts = {};
+let tableDetalle;
+
+const MESES_ORDEN = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'];
 
 // 1. REGLAS DE NEGOCIO Y LIMPIEZA
 const reglas = {
     cleanNumber: (val) => {
         if (!val) return 0;
         if (typeof val === 'number') return val;
-        // Elimina comas, espacios y letras como 'L' (Lempiras)
         const strNum = val.toString().replace(/[L$,\s]/gi, '').trim();
         const num = parseFloat(strNum);
         return isNaN(num) ? 0 : num;
@@ -21,16 +20,14 @@ const reglas = {
 
     getEmpresa: (tienda) => {
         tienda = (tienda || "").toUpperCase();
-        if (tienda.includes("DS") || tienda.includes("VITRINA")) {
-            return "DANILOS STORE";
-        }
+        if (tienda.includes("DS") || tienda.includes("VITRINA")) return "DANILOS STORE";
         return "EL COMPADRE";
     },
 
     getTipoInterno: (tienda, categoria) => {
         tienda = (tienda || "").toUpperCase();
         categoria = (categoria || "").toUpperCase();
-        // Clasificación estricta corporativa: CD, CEDIS, MEGABODEGA, AEC y DS
+        // Clasificación corporativa estricta
         if (tienda.includes("CD ") || tienda.includes("CEDIS") || tienda.includes("MEGABODEGA") || 
             categoria === "ALMACEN" || tienda.includes("AEC") || tienda.includes("DS")) {
             return "CEDIS";
@@ -43,7 +40,7 @@ const reglas = {
     }
 };
 
-// Función vital: Limpia los encabezados de Excel (elimina el caracter oculto BOM \ufeff y pone todo en mayúsculas)
+// Limpia los encabezados de Excel (elimina caracteres ocultos y pone mayúsculas)
 function normalizeRow(row) {
     let normalized = {};
     for (let key in row) {
@@ -52,155 +49,209 @@ function normalizeRow(row) {
             normalized[newKey] = row[key];
         }
     }
+    // Agregar TiendaVisual calculada al vuelo para facilitar filtros
+    let division = normalized['SUCURSAL'] || normalized['DIVISION'] || "";
+    let categoria = normalized['CATEGORIA'] || "";
+    normalized['TIENDAVISUAL'] = reglas.getFiltroVisual(reglas.getTipoInterno(division, categoria));
     return normalized;
 }
 
-// 2. LECTURA Y PROCESAMIENTO AUTOMÁTICO (PapaParse)
+// 2. INICIALIZACIÓN
 $(document).ready(function () {
-    $('.select2').select2({ theme: 'bootstrap-5', placeholder: "Todos..." });
-    
-    const hoy = new Date();
-    $('#fecha-hoy').text(hoy.toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' }));
+    $('.select2').select2({ theme: 'bootstrap-5', placeholder: "Todos...", allowClear: true });
+    $('#fecha-hoy').text(new Date().toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' }));
 
     Promise.all([
-        new Promise((resolve, reject) => {
-            Papa.parse("saldo_almacen_suministro.csv", {
-                download: true, header: true, skipEmptyLines: true,
-                complete: resolve, error: reject
-            });
-        }),
-        new Promise((resolve, reject) => {
-            Papa.parse("movimiento_suministro_2025_2026.csv", {
-                download: true, header: true, skipEmptyLines: true,
-                complete: resolve, error: reject
-            });
-        })
+        new Promise((resolve, reject) => Papa.parse("saldo_almacen_suministro.csv", { download: true, header: true, skipEmptyLines: true, complete: resolve, error: reject })),
+        new Promise((resolve, reject) => Papa.parse("movimiento_suministro_2025_2026.csv", { download: true, header: true, skipEmptyLines: true, complete: resolve, error: reject }))
     ]).then(results => {
-        // Normalizamos inmediatamente toda la data leída para evitar errores de nombres
         rawSaldos = results[0].data.map(normalizeRow);
         rawMovimientos = results[1].data.map(normalizeRow);
         
         prepararFiltrosDropdowns();
-        procesarYLimpiarDatos();
+        bindEventosFiltros();
+        aplicarFiltrosYRenderizar(); // Primer render
         $('#loader-overlay').fadeOut();
     }).catch(err => {
-        console.error("Error cargando los CSV:", err);
-        $('#loader-overlay').html('<h4 class="text-danger fw-bold">Error al cargar datos. Verifique los archivos CSV.</h4>');
+        console.error(err);
+        $('#loader-overlay').html('<h4 class="text-danger fw-bold">Error al cargar datos.</h4>');
     });
 
     $('#btn-reset').click(function() {
         $('.select2').val(null).trigger('change');
+        $('#btnFlujoAmbos').prop('checked', true).trigger('change');
     });
 });
 
-// 3. PREPARAR LISTAS DESPLEGABLES (FILTROS)
+// 3. LLENADO DE FILTROS DESPLEGABLES
 function prepararFiltrosDropdowns() {
-    let setCat = new Set(), setProv = new Set(), setDep = new Set(), setMes = new Set();
-
-    rawSaldos.forEach(row => {
-        if(row['CATEGORIA']) setCat.add(row['CATEGORIA']);
-        if(row['PROVEEDOR']) setProv.add(row['PROVEEDOR']);
+    let setCat = new Set(), setProv = new Set(), setDep = new Set();
+    
+    rawSaldos.forEach(r => { if(r['CATEGORIA']) setCat.add(r['CATEGORIA']); if(r['PROVEEDOR']) setProv.add(r['PROVEEDOR']); });
+    rawMovimientos.forEach(r => { 
+        if(r['DEPARTAMENTO2']) setDep.add(r['DEPARTAMENTO2']); 
+        if(r['CATEGORIA']) setCat.add(r['CATEGORIA']);
+        if(r['PROVEEDOR']) setProv.add(r['PROVEEDOR']);
     });
 
-    rawMovimientos.forEach(row => {
-        if(row['DEPARTAMENTO2']) setDep.add(row['DEPARTAMENTO2']); // Alineado a tu archivo exacto
-        if(row['MES']) setMes.add(row['MES']);
-    });
-
-    const llenarSelect = (id, dataSet) => {
-        const select = $(id);
-        select.empty();
+    const llenar = (id, dataSet) => {
+        const select = $(id); select.empty();
         Array.from(dataSet).sort().forEach(item => select.append(new Option(item, item)));
     };
 
-    llenarSelect('#f-cat', setCat);
-    llenarSelect('#f-prov', setProv);
-    llenarSelect('#f-dep', setDep);
-    llenarSelect('#f-mes', setMes);
-
+    llenar('#f-cat', setCat); llenar('#f-prov', setProv); llenar('#f-dep', setDep);
+    
     $('#f-year').empty().append(new Option('2025', '2025')).append(new Option('2026', '2026'));
+    $('#f-mes').empty(); MESES_ORDEN.forEach(m => $('#f-mes').append(new Option(m, m)));
     $('#f-tienda-tipo').empty().append(new Option('DETALLE', 'DETALLE')).append(new Option('MAYOREO', 'MAYOREO'));
+    
+    // Dejar todos sin selección inicial (Muestra Todo)
+    $('.select2:not(#f-metric)').val(null).trigger('change.select2');
 }
 
-// 4. LÓGICA DE DATOS Y KPI
-function procesarYLimpiarDatos() {
-    let totalCosto = 0;
-    let totalStock = 0;
+// Escuchar cambios en cualquier filtro
+function bindEventosFiltros() {
+    $('.select2').on('change', function() { aplicarFiltrosYRenderizar(); });
+    $('input[name="btnFlujo"]').on('change', function() { aplicarFiltrosYRenderizar(); });
+}
 
-    // Procesamos la tabla de Saldos
-    masterData = rawSaldos.map(row => {
-        let tienda = row['SUCURSAL'] || row['DIVISION'] || ""; 
-        let categoria = row['CATEGORIA'] || "";
-        let tipoInterno = reglas.getTipoInterno(tienda, categoria);
+// 4. MOTOR PRINCIPAL: FILTRA Y RECALCULA
+function aplicarFiltrosYRenderizar() {
+    // 4.1 Leer Filtros Seleccionados
+    const fYear = $('#f-year').val() || [];
+    const fMes = $('#f-mes').val() || [];
+    const fTienda = $('#f-tienda-tipo').val() || [];
+    const fCat = $('#f-cat').val() || [];
+    const fProv = $('#f-prov').val() || [];
+    const fDep = $('#f-dep').val() || [];
+    const fMetric = $('#f-metric').val(); // 'und' o 'cst'
+    const fFlujo = $('input[name="btnFlujo"]:checked').val(); // 'all', 'in', 'out'
+
+    // 4.2 Filtrar SALDOS (Afecta Stock Físico, Costo e Inventario DataTable)
+    let totalCosto = 0, totalStock = 0;
+    let saldosTabla = [];
+    
+    rawSaldos.forEach(row => {
+        if (fTienda.length && !fTienda.includes(row['TIENDAVISUAL'])) return;
+        if (fCat.length && !fCat.includes(row['CATEGORIA'])) return;
+        if (fProv.length && !fProv.includes(row['PROVEEDOR'])) return;
+
+        let division = row['SUCURSAL'] || row['DIVISION'] || "";
         let stock = reglas.cleanNumber(row['SALDOUNDTOTAL']);
         let costo = reglas.cleanNumber(row['TOTAL COSTO UND.']);
 
         totalStock += stock;
         totalCosto += costo;
 
-        return {
-            Empresa: reglas.getEmpresa(tienda),
-            TiendaInterna: tipoInterno,
-            TiendaVisual: reglas.getFiltroVisual(tipoInterno),
-            Division: tienda,
-            Categoria: categoria,
-            Grupo: row['GRUPO'] || "",
+        saldosTabla.push({
+            Empresa: reglas.getEmpresa(division),
+            Division: division,
+            Categoria: row['CATEGORIA'] || "",
             Proveedor: row['PROVEEDOR'] || "SIN ESPECIFICAR",
+            TiendaVisual: row['TIENDAVISUAL'],
             Stock: stock,
-            Costo: costo
-        };
+            Costo: costo,
+            Grupo: row['GRUPO'] || ""
+        });
     });
 
-    // Procesamos la tabla de Movimientos
-    let entradasUnd = 0, salidasUnd = 0;
-    let consumoPorDepto = {}, consumoPorCat = {};
+    // 4.3 Filtrar MOVIMIENTOS (Afecta Entradas, Salidas, Tops y Gráfico de Líneas)
+    let totalPos = 0, totalNeg = 0;
+    let consumoPorDepto = {}, consumoPorCat = {}, consumoPorProv = {}, consumoPorGrp = {};
+    
+    // Arrays para gráfico de 4 líneas (12 meses)
+    let lineIn25 = Array(12).fill(0), lineOut25 = Array(12).fill(0);
+    let lineIn26 = Array(12).fill(0), lineOut26 = Array(12).fill(0);
+
+    // Definir qué palabra buscar según el filtro de métrica
+    const colWord = fMetric === 'und' ? 'UNIDAD' : 'COSTO';
 
     rawMovimientos.forEach(row => {
+        let mesStr = (row['MES'] || "").toUpperCase();
+        if (fMes.length && !fMes.includes(mesStr)) return;
+        if (fTienda.length && !fTienda.includes(row['TIENDAVISUAL'])) return;
+        if (fCat.length && !fCat.includes(row['CATEGORIA'])) return;
+        if (fProv.length && !fProv.includes(row['PROVEEDOR'])) return;
+        if (fDep.length && !fDep.includes(row['DEPARTAMENTO2'])) return;
+
+        let mesIdx = MESES_ORDEN.indexOf(mesStr);
         let depto = row['DEPARTAMENTO2'] || "SIN ASIGNAR";
         let cat = row['CATEGORIA'] || "SIN ASIGNAR";
-        let consumoFila = 0;
+        let prov = row['PROVEEDOR'] || "SIN ASIGNAR";
+        let grp = row['GRUPO'] || "SIN ASIGNAR";
 
+        let filaPos = 0, filaNeg = 0;
+
+        // Analizar cada columna para sumar dinámicamente según el año
         Object.keys(row).forEach(k => {
-            let val = reglas.cleanNumber(row[k]);
-            
-            if (k.includes('UNIDAD') && k.includes('POS')) entradasUnd += Math.abs(val);
-            if (k.includes('UNIDAD') && k.includes('NEG')) salidasUnd += Math.abs(val);
+            if (!k.includes(colWord)) return; // Si no es la métrica seleccionada, ignorar
 
-            // Consumo basado en costo negativo (salidas)
-            if (k.includes('COSTO') && k.includes('NEG')) {
-                consumoFila += Math.abs(val);
+            let is2025 = k.includes('2025');
+            let is2026 = k.includes('2026');
+            let isPos = k.includes('POS');
+            let isNeg = k.includes('NEG');
+            let val = Math.abs(reglas.cleanNumber(row[k]));
+
+            // Filtrar por año seleccionado
+            if (fYear.length > 0) {
+                if (is2025 && !fYear.includes('2025')) return;
+                if (is2026 && !fYear.includes('2026')) return;
+            }
+
+            // Suma Globales
+            if (isPos) { totalPos += val; filaPos += val; }
+            if (isNeg) { totalNeg += val; filaNeg += val; }
+
+            // Llenar datos para el gráfico de líneas si es un mes válido
+            if (mesIdx >= 0) {
+                if(is2025 && isPos) lineIn25[mesIdx] += val;
+                if(is2025 && isNeg) lineOut25[mesIdx] += val;
+                if(is2026 && isPos) lineIn26[mesIdx] += val;
+                if(is2026 && isNeg) lineOut26[mesIdx] += val;
             }
         });
 
-        consumoPorDepto[depto] = (consumoPorDepto[depto] || 0) + consumoFila;
-        consumoPorCat[cat] = (consumoPorCat[cat] || 0) + consumoFila;
+        // Sumar a los Top según el flujo seleccionado (Si es "Solo Entradas" el top es de lo recibido, sino es de lo consumido)
+        let valorParaTops = (fFlujo === 'in') ? filaPos : filaNeg;
+        
+        consumoPorDepto[depto] = (consumoPorDepto[depto] || 0) + valorParaTops;
+        consumoPorCat[cat] = (consumoPorCat[cat] || 0) + valorParaTops;
+        consumoPorProv[prov] = (consumoPorProv[prov] || 0) + valorParaTops;
+        consumoPorGrp[grp] = (consumoPorGrp[grp] || 0) + valorParaTops;
     });
 
-    // Inyectar KPI Numéricos
+    // 4.4 Inyectar KPI Visuales
+    let prefix = fMetric === 'cst' ? 'L ' : '';
+    let configNum = fMetric === 'cst' ? {minimumFractionDigits: 2, maximumFractionDigits: 2} : {maximumFractionDigits: 0};
+
     $('#k-cost').text('L ' + totalCosto.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
     $('#k-stock').text(totalStock.toLocaleString('en-US'));
-    $('#k-pos').text(entradasUnd.toLocaleString('en-US'));
-    $('#k-neg').text(salidasUnd.toLocaleString('en-US'));
+    $('#k-pos').text(prefix + totalPos.toLocaleString('en-US', configNum));
+    $('#k-neg').text(prefix + totalNeg.toLocaleString('en-US', configNum));
 
-    // Calcular e Inyectar Tops
-    let arrDeptos = Object.entries(consumoPorDepto).sort((a,b) => b[1] - a[1]);
-    let arrCats = Object.entries(consumoPorCat).sort((a,b) => b[1] - a[1]);
+    let topDepto = Object.entries(consumoPorDepto).sort((a,b)=>b[1]-a[1]);
+    let topCat = Object.entries(consumoPorCat).sort((a,b)=>b[1]-a[1]);
+    $('#k-top-d').text(topDepto.length > 0 ? topDepto[0][0].substring(0,20) : '-');
+    $('#k-top-c').text(topCat.length > 0 ? topCat[0][0].substring(0,20) : '-');
 
-    $('#k-top-d').text(arrDeptos.length > 0 ? arrDeptos[0][0].substring(0, 18) : '-');
-    $('#k-top-c').text(arrCats.length > 0 ? arrCats[0][0].substring(0, 18) : '-');
-
-    inicializarDataTables();
-    renderGraficos(consumoPorDepto);
+    // 4.5 Actualizar Tabla y Gráficos
+    actualizarTabla(saldosTabla);
+    actualizarGraficos({
+        lineIn25, lineOut25, lineIn26, lineOut26,
+        consumoPorDepto, consumoPorCat, consumoPorProv, consumoPorGrp,
+        fFlujo, fYear, prefix, configNum
+    });
 }
 
-// 5. RENDERIZADO DE TABLA
-function inicializarDataTables() {
+// 5. DATA TABLES
+function actualizarTabla(datosTabla) {
     if($.fn.DataTable.isDataTable('#tablaDetalle')) {
-        $('#tablaDetalle').DataTable().destroy();
+        tableDetalle.clear().rows.add(datosTabla).draw();
+        return;
     }
     
     tableDetalle = $('#tablaDetalle').DataTable({
-        data: masterData,
+        data: datosTabla,
         pageLength: 15,
         language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json' },
         order: [[6, 'desc']],
@@ -211,140 +262,87 @@ function inicializarDataTables() {
             { data: 'Proveedor', defaultContent: '-' },
             { 
                 data: 'TiendaVisual',
-                defaultContent: '-',
-                render: function(data, type) {
-                    if (type === 'display') {
-                        let color = data === 'MAYOREO' ? 'primary' : 'secondary';
-                        return `<span class="badge bg-${color}">${data}</span>`;
-                    }
-                    return data;
-                }
+                render: data => `<span class="badge bg-${data==='MAYOREO'?'primary':'secondary'}">${data}</span>`
             },
             { 
-                data: 'Stock',
-                className: 'num',
-                defaultContent: 0,
-                render: function(data, type) {
-                    if (type === 'display' || type === 'filter') {
-                        let color = data > 0 ? 'success' : (data < 0 ? 'danger' : 'dark');
-                        return `<span class="badge bg-${color} px-3 py-2 shadow-sm" style="font-size:0.9rem">${data.toLocaleString('en-US')}</span>`;
-                    }
-                    return data;
-                }
+                data: 'Stock', className: 'num',
+                render: (data, t) => t==='display' ? `<span class="badge bg-${data>0?'success':(data<0?'danger':'dark')} px-3 py-2">${data.toLocaleString('en-US')}</span>` : data
             },
             { 
-                data: 'Costo',
-                className: 'num',
-                defaultContent: 0,
-                render: function(data, type) {
-                    if (type === 'display') {
-                        return `<strong>L ${data.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>`;
-                    }
-                    return data;
-                }
+                data: 'Costo', className: 'num',
+                render: (data, t) => t==='display' ? `<strong>L ${data.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</strong>` : data
             }
         ]
     });
 }
 
-// 6. RENDERIZADO DE GRÁFICOS
-function renderGraficos(consumoPorDepto) {
+// 6. GRÁFICOS (CHART.JS)
+function actualizarGraficos(dataGraficos) {
     Chart.defaults.font.family = "'Segoe UI', Arial, sans-serif";
-    
-    const optionsBase = {
+    Object.values(charts).forEach(c => c.destroy()); // Limpiar gráficos anteriores
+
+    const { lineIn25, lineOut25, lineIn26, lineOut26, fFlujo, fYear, prefix, configNum } = dataGraficos;
+
+    const optBase = {
         responsive: true, maintainAspectRatio: false,
-        scales: {
-            x: { grid: { display: false } },
-            y: { grid: { display: false }, ticks: { display: false }, border: { display: false } }
-        },
+        scales: { x: { grid: { display: false } }, y: { grid: { display: false }, ticks: { display: false }, border: { display: false } } },
         plugins: {
             legend: { display: false },
             datalabels: {
-                anchor: 'end', align: 'top', color: '#111', font: { weight: 'bold', size: 10 },
-                formatter: v => v > 0 ? v.toLocaleString('en-US', {maximumFractionDigits:0}) : ''
+                anchor: 'end', align: 'top', color: '#333', font: { weight: 'bold', size: 10 },
+                formatter: v => v > 0 ? prefix + v.toLocaleString('en-US', configNum) : ''
             }
         }
     };
 
-    Object.values(charts).forEach(c => c.destroy());
+    // --- GRÁFICO 1: RESPIRACIÓN LOGÍSTICA (LÍNEAS) ---
+    let datasetsLine = [];
+    let show25 = fYear.length === 0 || fYear.includes('2025');
+    let show26 = fYear.length === 0 || fYear.includes('2026');
 
-    let mesesData = {};
-    rawMovimientos.forEach(row => {
-        let mes = row['MES'] || 'S/M';
-        if(mes === 'S/M') return;
-        if(!mesesData[mes]) mesesData[mes] = { in: 0, out: 0 };
-        
-        Object.keys(row).forEach(k => {
-            let val = Math.abs(reglas.cleanNumber(row[k]));
-            if(k.includes('UNIDAD') && k.includes('POS')) mesesData[mes].in += val;
-            if(k.includes('UNIDAD') && k.includes('NEG')) mesesData[mes].out += val;
-        });
-    });
+    if (show25 && (fFlujo === 'all' || fFlujo === 'in')) {
+        datasetsLine.push({ label: 'Entradas 2025 (+)', data: lineIn25, borderColor: '#0082c8', borderDash: [5, 5], tension: 0.3 });
+    }
+    if (show25 && (fFlujo === 'all' || fFlujo === 'out')) {
+        datasetsLine.push({ label: 'Salidas 2025 (-)', data: lineOut25, borderColor: '#ff7b72', borderDash: [5, 5], tension: 0.3 });
+    }
+    if (show26 && (fFlujo === 'all' || fFlujo === 'in')) {
+        datasetsLine.push({ label: 'Entradas 2026 (+)', data: lineIn26, borderColor: '#012094', borderWidth: 3, tension: 0.3 });
+    }
+    if (show26 && (fFlujo === 'all' || fFlujo === 'out')) {
+        datasetsLine.push({ label: 'Salidas 2026 (-)', data: lineOut26, borderColor: '#E1251B', borderWidth: 3, tension: 0.3 });
+    }
 
-    const ctxResp = document.getElementById('c-respiracion').getContext('2d');
-    charts.cResp = new Chart(ctxResp, {
+    charts.cResp = new Chart(document.getElementById('c-respiracion').getContext('2d'), {
         type: 'line',
-        data: {
-            labels: Object.keys(mesesData),
-            datasets: [
-                { label: 'Entradas (+)', data: Object.values(mesesData).map(d => d.in), borderColor: '#00b4db', backgroundColor: 'rgba(0,180,219,0.1)', fill: true, tension: 0.3 },
-                { label: 'Salidas (-)', data: Object.values(mesesData).map(d => d.out), borderColor: '#E1251B', backgroundColor: 'rgba(225,37,27,0.1)', fill: true, tension: 0.3 }
-            ]
-        },
-        options: { ...optionsBase, plugins: { legend: { display: true, position: 'bottom' } } }
+        data: { labels: MESES_ORDEN, datasets: datasetsLine },
+        options: { ...optBase, plugins: { legend: { display: true, position: 'bottom' }, datalabels: { display: false } } }
     });
 
-    let sortedDept = Object.entries(consumoPorDepto).sort((a,b)=>b[1]-a[1]).slice(0,12);
-    charts.cDept = new Chart(document.getElementById('c-dept').getContext('2d'), {
-        type: 'bar',
-        data: {
-            labels: sortedDept.map(d=>d[0].substring(0,12)),
-            datasets: [{ data: sortedDept.map(d=>d[1]), backgroundColor: '#E1251B', borderRadius: 4 }]
-        },
-        options: optionsBase
-    });
+    // Función auxiliar para crear gráficos de barras
+    const renderBar = (id, dataObj, color, isHorizontal = false) => {
+        let sorted = Object.entries(dataObj).sort((a,b)=>b[1]-a[1]).slice(0, 15);
+        let opts = JSON.parse(JSON.stringify(optBase));
+        if(isHorizontal) {
+            opts.indexAxis = 'y';
+            opts.plugins.datalabels.anchor = 'end';
+            opts.plugins.datalabels.align = 'right';
+        }
+        // Custom Datalabels formatter for Bars
+        opts.plugins.datalabels.formatter = v => v > 0 ? prefix + v.toLocaleString('en-US', configNum) : '';
 
-    let catSaldo = {};
-    masterData.forEach(d => catSaldo[d.Categoria] = (catSaldo[d.Categoria] || 0) + d.Costo);
-    let sortedCat = Object.entries(catSaldo).sort((a,b)=>b[1]-a[1]).slice(0,12);
-    
-    charts.cCat = new Chart(document.getElementById('c-cat').getContext('2d'), {
-        type: 'bar',
-        data: {
-            labels: sortedCat.map(d=>d[0].substring(0,12)),
-            datasets: [{ data: sortedCat.map(d=>d[1]), backgroundColor: '#012094', borderRadius: 4 }]
-        },
-        options: optionsBase
-    });
+        charts[id] = new Chart(document.getElementById(id).getContext('2d'), {
+            type: 'bar',
+            data: {
+                labels: sorted.map(d => d[0].substring(0, 18)),
+                datasets: [{ data: sorted.map(d => d[1]), backgroundColor: color, borderRadius: 4 }]
+            },
+            options: opts
+        });
+    };
 
-    let provSaldo = {};
-    masterData.forEach(d => provSaldo[d.Proveedor] = (provSaldo[d.Proveedor] || 0) + d.Costo);
-    let sortedProv = Object.entries(provSaldo).sort((a,b)=>b[1]-a[1]).slice(0,15);
-    
-    let optHorizontal = JSON.parse(JSON.stringify(optionsBase));
-    optHorizontal.indexAxis = 'y';
-    optHorizontal.plugins.datalabels.anchor = 'end';
-    optHorizontal.plugins.datalabels.align = 'right';
-
-    charts.cProv = new Chart(document.getElementById('c-prov').getContext('2d'), {
-        type: 'bar',
-        data: {
-            labels: sortedProv.map(d=>d[0].substring(0,15)),
-            datasets: [{ data: sortedProv.map(d=>d[1]), backgroundColor: '#4ca1af', borderRadius: 4 }]
-        },
-        options: optHorizontal
-    });
-
-    let grpSaldo = {};
-    masterData.forEach(d => { if(d.Grupo) grpSaldo[d.Grupo] = (grpSaldo[d.Grupo] || 0) + d.Costo; });
-    let sortedGrp = Object.entries(grpSaldo).sort((a,b)=>b[1]-a[1]).slice(0,15);
-    
-    charts.cGrp = new Chart(document.getElementById('c-grp').getContext('2d'), {
-        type: 'bar',
-        data: {
-            labels: sortedGrp.map(d=>d[0].substring(0,15)),
-            datasets: [{ data: sortedGrp.map(d=>d[1]), backgroundColor: '#0082c8', borderRadius: 4 }]
-        },
-        options: optionsBase
-    });
+    renderBar('c-dept', dataGraficos.consumoPorDepto, '#E1251B');
+    renderBar('c-cat', dataGraficos.consumoPorCat, '#012094');
+    renderBar('c-prov', dataGraficos.consumoPorProv, '#2c3e50', true);
+    renderBar('c-grp', dataGraficos.consumoPorGrp, '#00b4db', true);
 }
