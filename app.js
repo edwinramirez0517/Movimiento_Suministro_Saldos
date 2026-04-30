@@ -208,19 +208,20 @@ function aplicarFiltrosYRenderizar() {
     $('#k-top-c').text(topCat.length > 0 ? topCat[0][0].substring(0,25) : '-');
 
     actualizarTablaSaldos(saldosTabla);
+    
+    $('#view-detalle').hide(); 
+    $('#view-resumen').show();
+    
     actualizarTablaMovsResumen(Object.values(resumenMap), prefix, configNum);
-
-    // Forzar vista principal
-    $('#dashboard-detalle').hide(); 
-    $('#main-filters').show();
-    $('#dashboard-principal').show();
 
     actualizarGraficos({ lineIn25, lineOut25, lineIn26, lineOut26, consumoPorDepto, consumoPorCat, consumoPorProv, consumoPorGrp, fFlujo, fYear, prefix, configNum });
 }
 
 // 5. DATA TABLES
 function actualizarTablaSaldos(datosTabla) {
-    if($.fn.DataTable.isDataTable('#tablaDetalle')) { tableDetalle.clear().rows.add(datosTabla).draw(); return; }
+    if($.fn.DataTable.isDataTable('#tablaDetalle')) { 
+        $('#tablaDetalle').DataTable().destroy(); 
+    }
     tableDetalle = $('#tablaDetalle').DataTable({
         data: datosTabla, pageLength: 15, language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json' }, order: [[5, 'desc']],
         columns: [
@@ -232,7 +233,10 @@ function actualizarTablaSaldos(datosTabla) {
 }
 
 function actualizarTablaMovsResumen(datosTabla, prefix, configNum) {
-    if($.fn.DataTable.isDataTable('#tablaMovsResumen')) { tableMovsResumen.clear().rows.add(datosTabla).draw(); return; }
+    // Destruimos la tabla primero para que no guarde el formato viejo (Solución al fallo de la "L")
+    if($.fn.DataTable.isDataTable('#tablaMovsResumen')) { 
+        $('#tablaMovsResumen').DataTable().destroy(); 
+    }
     tableMovsResumen = $('#tablaMovsResumen').DataTable({
         data: datosTabla, pageLength: 10, language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json' }, order: [[0, 'asc']],
         columns: [
@@ -271,22 +275,22 @@ function abrirDashboardDetalle(mes, depto) {
     $('#det-in-25').text(prefix + sumIn25.toLocaleString('en-US', configNum));
     $('#det-in-26').text(prefix + sumIn26.toLocaleString('en-US', configNum));
 
+    // Destruimos la tabla primero (Solución al fallo de la "L")
     if($.fn.DataTable.isDataTable('#tablaMovsDetalle')) {
-        tableMovsDetalle.clear().rows.add(dataDetalle).draw();
-    } else {
-        tableMovsDetalle = $('#tablaMovsDetalle').DataTable({
-            data: dataDetalle, pageLength: 10, language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json' }, order: [[4, 'asc']],
-            columns: [
-                { data: 'Mes' }, { data: 'Departamento' }, { data: 'Categoria' }, { data: 'Grupo' },
-                { data: 'Out25', className: 'num text-danger', render: (d, t) => t==='display' ? (d!==0 ? prefix+Math.abs(d).toLocaleString('en-US', configNum) : '-') : Math.abs(d) },
-                { data: 'Out26', className: 'num text-danger', render: (d, t) => t==='display' ? (d!==0 ? prefix+Math.abs(d).toLocaleString('en-US', configNum) : '-') : Math.abs(d) },
-                { data: 'In25', className: 'num text-success', render: (d, t) => t==='display' ? (d!==0 ? prefix+d.toLocaleString('en-US', configNum) : '-') : d },
-                { data: 'In26', className: 'num text-success', render: (d, t) => t==='display' ? (d!==0 ? prefix+d.toLocaleString('en-US', configNum) : '-') : d }
-            ]
-        });
+        $('#tablaMovsDetalle').DataTable().destroy();
     }
+    
+    tableMovsDetalle = $('#tablaMovsDetalle').DataTable({
+        data: dataDetalle, pageLength: 10, language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json' }, order: [[4, 'asc']],
+        columns: [
+            { data: 'Mes' }, { data: 'Departamento' }, { data: 'Categoria' }, { data: 'Grupo' },
+            { data: 'Out25', className: 'num text-danger', render: (d, t) => t==='display' ? (d!==0 ? prefix+Math.abs(d).toLocaleString('en-US', configNum) : '-') : Math.abs(d) },
+            { data: 'Out26', className: 'num text-danger', render: (d, t) => t==='display' ? (d!==0 ? prefix+Math.abs(d).toLocaleString('en-US', configNum) : '-') : Math.abs(d) },
+            { data: 'In25', className: 'num text-success', render: (d, t) => t==='display' ? (d!==0 ? prefix+d.toLocaleString('en-US', configNum) : '-') : d },
+            { data: 'In26', className: 'num text-success', render: (d, t) => t==='display' ? (d!==0 ? prefix+d.toLocaleString('en-US', configNum) : '-') : d }
+        ]
+    });
 
-    // Gráfico Especial de Detalle (Horizontal Bar)
     if(charts.cDetGrp) charts.cDetGrp.destroy();
     let sortedDetGrp = Object.entries(rankGrupo).sort((a,b)=>b[1]-a[1]).slice(0, 10);
     charts.cDetGrp = new Chart(document.getElementById('c-detalle-grupo').getContext('2d'), {
@@ -303,7 +307,6 @@ function abrirDashboardDetalle(mes, depto) {
         }
     });
 
-    // Transición Mágica
     $('#main-filters').slideUp();
     $('#dashboard-principal').hide();
     $('#dashboard-detalle').fadeIn();
