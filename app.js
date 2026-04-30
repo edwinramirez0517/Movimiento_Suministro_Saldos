@@ -1,4 +1,4 @@
-// Registramos el plugin Datalabels globalmente
+// Registramos el plugin Datalabels globalmente para los gráficos
 Chart.register(ChartDataLabels);
 
 // Variables Globales
@@ -11,8 +11,9 @@ const reglas = {
     cleanNumber: (val) => {
         if (!val) return 0;
         if (typeof val === 'number') return val;
-        // Elimina comas y convierte string a número flotante
-        const num = parseFloat(val.toString().replace(/,/g, '').trim());
+        // Elimina comas, espacios y la letra 'L' para evitar errores matemáticos (ej: "L465,101.94" -> 465101.94)
+        const strNum = val.toString().replace(/[L$,\s]/gi, '').trim();
+        const num = parseFloat(strNum);
         return isNaN(num) ? 0 : num;
     },
 
@@ -34,91 +35,126 @@ const reglas = {
     },
 
     getFiltroVisual: (tipoInterno) => {
-        // En el filtro desplegable SOLO existirán "MAYOREO" (CEDIS) y "DETALLE" (TIENDA)
         return tipoInterno === "CEDIS" ? "MAYOREO" : "DETALLE";
     }
 };
 
 // 2. LECTURA Y PROCESAMIENTO AUTOMÁTICO (PapaParse)
 $(document).ready(function () {
-    // Inicializar Select2
     $('.select2').select2({ theme: 'bootstrap-5', placeholder: "Todos..." });
     
-    // Poner fecha actual
     const hoy = new Date();
     $('#fecha-hoy').text(hoy.toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' }));
 
-    // Leer CSV referenciado. Nota: Asegúrate de que las cabeceras del CSV 
-    // coincidan con las utilizadas en el mapeo (Ej. Tienda, Categoria, Proveedor, Costo, Unidades)
-    Papa.parse("movimiento_suministro_2025_2026.csv", {
-        download: true,
-        header: true,
-        skipEmptyLines: true,
-        complete: function(results) {
-            procesarYLimpiarDatos(results.data);
-            $('#loader-overlay').fadeOut();
-        },
-        error: function(err) {
-            console.error("Error cargando el CSV:", err);
-            $('#loader-overlay').html('<h4 class="text-danger">Error al cargar datos. Verifique el archivo CSV.</h4>');
-        }
+    // Usamos Promise.all para cargar AMBOS archivos CSV simultáneamente
+    Promise.all([
+        new Promise((resolve, reject) => {
+            Papa.parse("saldo_almacen_suministro.csv", {
+                download: true, header: true, skipEmptyLines: true,
+                complete: resolve, error: reject
+            });
+        }),
+        new Promise((resolve, reject) => {
+            Papa.parse("movimiento_suministro_2025_2026.csv", {
+                download: true, header: true, skipEmptyLines: true,
+                complete: resolve, error: reject
+            });
+        })
+    ]).then(results => {
+        const datosSaldos = results[0].data;
+        const datosMovimientos = results[1].data;
+        
+        procesarYLimpiarDatos(datosSaldos, datosMovimientos);
+        $('#loader-overlay').fadeOut();
+    }).catch(err => {
+        console.error("Error cargando los CSV:", err);
+        $('#loader-overlay').html('<h4 class="text-danger">Error al cargar datos. Verifique los nombres de los archivos.</h4>');
     });
 
-    // Eventos de botones
     $('#btn-reset').click(function() {
         $('.select2').val(null).trigger('change');
-        // trigger actualización aquí
     });
 });
 
-function procesarYLimpiarDatos(rawData) {
-    masterData = rawData.map(row => {
-        // Obtenemos los valores base (Asumiendo columnas estándar del CSV)
-        let tienda = row['Tienda'] || row['Division'] || ""; 
-        let categoria = row['Categoria'] || "";
+function procesarYLimpiarDatos(rawDataSaldos, rawDataMovimientos) {
+    // Función auxiliar para buscar nombres de columnas a pesar de caracteres ocultos (BOM) que Excel deja
+    const getVal = (row, keyName) => {
+        const key = Object.keys(row).find(k => k.toLowerCase().includes(keyName.toLowerCase()));
+        return key ? row[key] : "";
+    };
+
+    // Procesamos el stock (saldo_almacen_suministro.csv) para alimentar la tabla principal
+    masterData = rawDataSaldos.map(row => {
+        let tienda = getVal(row, 'Sucursal') || getVal(row, 'Division') || ""; 
+        let categoria = getVal(row, 'Categoria') || "";
         let tipoInterno = reglas.getTipoInterno(tienda, categoria);
 
         return {
             Empresa: reglas.getEmpresa(tienda),
             TiendaInterna: tipoInterno,
             TiendaVisual: reglas.getFiltroVisual(tipoInterno),
-            Division: tienda,
+            Division: getVal(row, 'Division'),
             Categoria: categoria,
-            Grupo: row['Grupo'] || "",
-            Proveedor: row['Proveedor'] || "SIN ESPECIFICAR",
-            Departamento: row['Departamento'] || "",
-            Año: row['Año'] || "",
-            Mes: row['Mes'] || "",
-            Stock: reglas.cleanNumber(row['Stock'] || row['Unidades']),
-            Costo: reglas.cleanNumber(row['Costo'])
+            Grupo: getVal(row, 'Grupo'),
+            Proveedor: getVal(row, 'Proveedor') || "SIN ESPECIFICAR",
+            // Detecta la columna "SaldoUNDTotal"
+            Stock: reglas.cleanNumber(getVal(row, 'SaldoUNDTotal')),
+            // Detecta la columna "Total Costo Und"
+            Costo: reglas.cleanNumber(getVal(row, 'Total Costo Und'))
         };
     });
 
-    // Llenar Filtro Tipo Tienda SOLO con los 2 valores permitidos
+    // Llenar Filtro Tipo Tienda
     const tiposVisuales = [...new Set(masterData.map(d => d.TiendaVisual))];
     const selectTienda = $('#f-tienda-tipo');
+    selectTienda.empty();
     tiposVisuales.forEach(t => selectTienda.append(new Option(t, t)));
 
-    // Aquí iría el llenado dinámico del resto de los filtros (Año, Mes, etc.)
-    
+    // Calcular KPIs Base
+    let totalCosto = 0;
+    let totalStock = 0;
+    masterData.forEach(d => {
+        totalCosto += d.Costo;
+        totalStock += d.Stock;
+    });
+
+    $('#k-cost').text('L ' + totalCosto.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
+    $('#k-stock').text(totalStock.toLocaleString('en-US'));
+
+    // Calcular Movimientos de Entradas y Salidas si existe el archivo (movimiento_suministro_2025_2026.csv)
+    if(rawDataMovimientos && rawDataMovimientos.length > 0) {
+        let totalSalidas = 0;
+        let totalEntradas = 0;
+        rawDataMovimientos.forEach(row => {
+            totalSalidas += Math.abs(reglas.cleanNumber(getVal(row, 'UNIDAD NEG 2026')) || 0);
+            totalEntradas += Math.abs(reglas.cleanNumber(getVal(row, 'UNIDAD POS 2026')) || 0);
+        });
+        $('#k-neg').text(totalSalidas.toLocaleString('en-US'));
+        $('#k-pos').text(totalEntradas.toLocaleString('en-US'));
+    }
+
     inicializarDataTables();
     inicializarGraficos();
 }
 
-// 3. CONFIGURACIÓN EJECUTIVA DE DATATABLES
 function inicializarDataTables() {
+    if($.fn.DataTable.isDataTable('#tablaDetalle')) {
+        $('#tablaDetalle').DataTable().destroy();
+    }
+    
     tableDetalle = $('#tablaDetalle').DataTable({
         data: masterData,
         pageLength: 15,
         language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json' },
-        order: [[6, 'desc']], // Ordenar por Costo por defecto usando su número crudo
+        order: [[6, 'desc']], // Ordena por la columna costo por defecto
         columns: [
-            { data: 'Empresa' },
-            { data: 'Division' },
-            { data: 'Categoria' },
-            { data: 'Proveedor' },
+            { data: 'Empresa', defaultContent: '-' },
+            { data: 'Division', defaultContent: '-' },
+            { data: 'Categoria', defaultContent: '-' },
+            { data: 'Proveedor', defaultContent: '-' },
             { 
                 data: 'TiendaVisual',
+                defaultContent: '-',
                 render: function(data, type) {
                     if (type === 'display') {
                         let color = data === 'MAYOREO' ? 'primary' : 'secondary';
@@ -130,44 +166,42 @@ function inicializarDataTables() {
             { 
                 data: 'Stock',
                 className: 'num',
+                defaultContent: 0,
                 render: function(data, type) {
                     if (type === 'display' || type === 'filter') {
-                        // Badges verde/rojo para display de inventario
-                        let color = data > 0 ? 'success' : (data < 0 ? 'danger' : 'dark');
-                        return `<span class="badge bg-${color} px-3 py-2 shadow-sm" style="font-size:0.9rem">${data.toLocaleString('en-US')}</span>`;
+                        let val = parseFloat(data) || 0;
+                        let color = val > 0 ? 'success' : (val < 0 ? 'danger' : 'dark');
+                        return `<span class="badge bg-${color} px-3 py-2 shadow-sm" style="font-size:0.9rem">${val.toLocaleString('en-US')}</span>`;
                     }
-                    return data; // Retorna crudo para el ordenamiento
+                    return data;
                 }
             },
             { 
                 data: 'Costo',
                 className: 'num',
+                defaultContent: 0,
                 render: function(data, type) {
                     if (type === 'display') {
-                        return `<strong>L ${data.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>`;
+                        let val = parseFloat(data) || 0;
+                        return `<strong>L ${val.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>`;
                     }
-                    return data; // Retorna número crudo para matemática y orden
+                    return data;
                 }
             }
         ]
     });
 }
 
-// 4. CONFIGURACIÓN EJECUTIVA DE CHART.JS
 function inicializarGraficos() {
     Chart.defaults.font.family = "'Segoe UI', Arial, sans-serif";
-    
-    // Opciones globales para cumplir las reglas de negocio ejecutivas (Sin grids, sin números Eje Y)
     const optionsEjecutivas = {
         responsive: true,
         maintainAspectRatio: false,
         scales: {
-            x: { 
-                grid: { display: false } 
-            },
+            x: { grid: { display: false } },
             y: { 
                 grid: { display: false }, 
-                ticks: { display: false }, // Oculta números del eje Y
+                ticks: { display: false },
                 border: { display: false }
             }
         },
@@ -179,26 +213,40 @@ function inicializarGraficos() {
                 color: '#111',
                 font: { weight: 'bold', size: 11 },
                 formatter: function(value) {
-                    return value.toLocaleString('en-US'); // Números formateados sobre la barra
+                    return value.toLocaleString('en-US');
                 }
             }
         }
     };
 
-    // Ejemplo: Inyección para Categorías Top (Reemplaza la data de ejemplo por la data agregada real)
+    // Destruir gráficos anteriores si existen
+    if(charts.cCat) charts.cCat.destroy();
+    
+    // Gráfico: Top Categorías (Dinámico basado en el CSV de saldos)
+    let agruparCategoria = {};
+    masterData.forEach(d => {
+        if(!agruparCategoria[d.Categoria]) agruparCategoria[d.Categoria] = 0;
+        agruparCategoria[d.Categoria] += d.Costo;
+    });
+
+    let categoriasSorted = Object.keys(agruparCategoria)
+        .map(cat => ({ nombre: cat, costo: agruparCategoria[cat] }))
+        .sort((a,b) => b.costo - a.costo)
+        .slice(0, 12);
+
     const ctxCat = document.getElementById('c-cat').getContext('2d');
     charts.cCat = new Chart(ctxCat, {
         type: 'bar',
         data: {
-            labels: ['Papelería', 'Limpieza', 'Computo', 'Construcción', 'Empaques'],
+            labels: categoriasSorted.map(c => c.nombre || "N/A"),
             datasets: [{
-                data: [150000, 120000, 95000, 45000, 30000],
+                data: categoriasSorted.map(c => c.costo),
                 backgroundColor: 'rgba(1, 32, 148, 0.85)',
                 borderRadius: 4
             }]
         },
         options: optionsEjecutivas
     });
-
-    // Repetir el patrón chart para los demás Canvas usando masterData agregada
+    
+    // (Puedes seguir este mismo patrón para los demás gráficos c-dept, c-prov, etc.)
 }
