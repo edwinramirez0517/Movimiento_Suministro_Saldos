@@ -13,7 +13,7 @@ const reglas = {
     cleanNumber: (val) => {
         if (!val) return 0;
         if (typeof val === 'number') return val;
-        // Elimina comas, espacios y la letra 'L' para evitar errores matemáticos
+        // Elimina comas, espacios y letras como 'L' (Lempiras)
         const strNum = val.toString().replace(/[L$,\s]/gi, '').trim();
         const num = parseFloat(strNum);
         return isNaN(num) ? 0 : num;
@@ -43,12 +43,17 @@ const reglas = {
     }
 };
 
-// Función auxiliar para leer encabezados con seguridad (ignora espacios raros de Excel)
-const getVal = (row, keyName) => {
-    if(!row) return "";
-    const key = Object.keys(row).find(k => k && k.toLowerCase().includes(keyName.toLowerCase()));
-    return key ? row[key] : "";
-};
+// Función vital: Limpia los encabezados de Excel (elimina el caracter oculto BOM \ufeff y pone todo en mayúsculas)
+function normalizeRow(row) {
+    let normalized = {};
+    for (let key in row) {
+        if (key) {
+            let newKey = key.replace(/^\uFEFF/, '').trim().toUpperCase();
+            normalized[newKey] = row[key];
+        }
+    }
+    return normalized;
+}
 
 // 2. LECTURA Y PROCESAMIENTO AUTOMÁTICO (PapaParse)
 $(document).ready(function () {
@@ -71,8 +76,9 @@ $(document).ready(function () {
             });
         })
     ]).then(results => {
-        rawSaldos = results[0].data;
-        rawMovimientos = results[1].data;
+        // Normalizamos inmediatamente toda la data leída para evitar errores de nombres
+        rawSaldos = results[0].data.map(normalizeRow);
+        rawMovimientos = results[1].data.map(normalizeRow);
         
         prepararFiltrosDropdowns();
         procesarYLimpiarDatos();
@@ -91,16 +97,14 @@ $(document).ready(function () {
 function prepararFiltrosDropdowns() {
     let setCat = new Set(), setProv = new Set(), setDep = new Set(), setMes = new Set();
 
-    // Extraer valores únicos de Saldos
     rawSaldos.forEach(row => {
-        let cat = getVal(row, 'Categoria'); if(cat) setCat.add(cat.toUpperCase());
-        let prov = getVal(row, 'Proveedor'); if(prov) setProv.add(prov.toUpperCase());
+        if(row['CATEGORIA']) setCat.add(row['CATEGORIA']);
+        if(row['PROVEEDOR']) setProv.add(row['PROVEEDOR']);
     });
 
-    // Extraer valores únicos de Movimientos
     rawMovimientos.forEach(row => {
-        let dep = getVal(row, 'DEPARTAMENTO'); if(dep) setDep.add(dep.toUpperCase());
-        let mes = getVal(row, 'MES'); if(mes) setMes.add(mes.toUpperCase());
+        if(row['DEPARTAMENTO2']) setDep.add(row['DEPARTAMENTO2']); // Alineado a tu archivo exacto
+        if(row['MES']) setMes.add(row['MES']);
     });
 
     const llenarSelect = (id, dataSet) => {
@@ -125,11 +129,11 @@ function procesarYLimpiarDatos() {
 
     // Procesamos la tabla de Saldos
     masterData = rawSaldos.map(row => {
-        let tienda = getVal(row, 'Sucursal') || getVal(row, 'Division') || ""; 
-        let categoria = getVal(row, 'Categoria') || "";
+        let tienda = row['SUCURSAL'] || row['DIVISION'] || ""; 
+        let categoria = row['CATEGORIA'] || "";
         let tipoInterno = reglas.getTipoInterno(tienda, categoria);
-        let stock = reglas.cleanNumber(getVal(row, 'SaldoUNDTotal'));
-        let costo = reglas.cleanNumber(getVal(row, 'Total Costo Und'));
+        let stock = reglas.cleanNumber(row['SALDOUNDTOTAL']);
+        let costo = reglas.cleanNumber(row['TOTAL COSTO UND.']);
 
         totalStock += stock;
         totalCosto += costo;
@@ -140,32 +144,30 @@ function procesarYLimpiarDatos() {
             TiendaVisual: reglas.getFiltroVisual(tipoInterno),
             Division: tienda,
             Categoria: categoria,
-            Grupo: getVal(row, 'Grupo') || "",
-            Proveedor: getVal(row, 'Proveedor') || "SIN ESPECIFICAR",
+            Grupo: row['GRUPO'] || "",
+            Proveedor: row['PROVEEDOR'] || "SIN ESPECIFICAR",
             Stock: stock,
             Costo: costo
         };
     });
 
-    // Procesamos la tabla de Movimientos (Entradas, Salidas y Top Consumos)
+    // Procesamos la tabla de Movimientos
     let entradasUnd = 0, salidasUnd = 0;
     let consumoPorDepto = {}, consumoPorCat = {};
 
     rawMovimientos.forEach(row => {
-        let depto = getVal(row, 'DEPARTAMENTO') || "SIN ASIGNAR";
-        let cat = getVal(row, 'Categoria') || "SIN ASIGNAR";
+        let depto = row['DEPARTAMENTO2'] || "SIN ASIGNAR";
+        let cat = row['CATEGORIA'] || "SIN ASIGNAR";
         let consumoFila = 0;
 
         Object.keys(row).forEach(k => {
-            let colName = k.toUpperCase();
             let val = reglas.cleanNumber(row[k]);
             
-            // Busca columnas de Entradas (POS) y Salidas (NEG) dinámicamente
-            if (colName.includes('UNIDAD') && colName.includes('POS')) entradasUnd += Math.abs(val);
-            if (colName.includes('UNIDAD') && colName.includes('NEG')) salidasUnd += Math.abs(val);
+            if (k.includes('UNIDAD') && k.includes('POS')) entradasUnd += Math.abs(val);
+            if (k.includes('UNIDAD') && k.includes('NEG')) salidasUnd += Math.abs(val);
 
-            // Para los Rankings (Tops), nos basamos en el Costo Negativo (Consumo Real)
-            if (colName.includes('COSTO') && colName.includes('NEG')) {
+            // Consumo basado en costo negativo (salidas)
+            if (k.includes('COSTO') && k.includes('NEG')) {
                 consumoFila += Math.abs(val);
             }
         });
@@ -191,7 +193,7 @@ function procesarYLimpiarDatos() {
     renderGraficos(consumoPorDepto);
 }
 
-// 5. RENDERIZADO DE TABLA (DataTables)
+// 5. RENDERIZADO DE TABLA
 function inicializarDataTables() {
     if($.fn.DataTable.isDataTable('#tablaDetalle')) {
         $('#tablaDetalle').DataTable().destroy();
@@ -201,7 +203,7 @@ function inicializarDataTables() {
         data: masterData,
         pageLength: 15,
         language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json' },
-        order: [[6, 'desc']], // Ordenar por costo descendente
+        order: [[6, 'desc']],
         columns: [
             { data: 'Empresa', defaultContent: '-' },
             { data: 'Division', defaultContent: '-' },
@@ -245,11 +247,10 @@ function inicializarDataTables() {
     });
 }
 
-// 6. RENDERIZADO DE GRÁFICOS (Chart.js)
+// 6. RENDERIZADO DE GRÁFICOS
 function renderGraficos(consumoPorDepto) {
     Chart.defaults.font.family = "'Segoe UI', Arial, sans-serif";
     
-    // Configuraciones estandarizadas ejecutivas (Sin líneas guías, sin eje Y)
     const optionsBase = {
         responsive: true, maintainAspectRatio: false,
         scales: {
@@ -265,21 +266,18 @@ function renderGraficos(consumoPorDepto) {
         }
     };
 
-    // Destruir gráficos previos para evitar solapamiento
     Object.values(charts).forEach(c => c.destroy());
 
-    // --- GRÁFICO 1: Respiración Logística (Entradas vs Salidas por Mes) ---
     let mesesData = {};
     rawMovimientos.forEach(row => {
-        let mes = getVal(row, 'MES') || 'S/M';
+        let mes = row['MES'] || 'S/M';
         if(mes === 'S/M') return;
         if(!mesesData[mes]) mesesData[mes] = { in: 0, out: 0 };
         
         Object.keys(row).forEach(k => {
-            let colName = k.toUpperCase();
             let val = Math.abs(reglas.cleanNumber(row[k]));
-            if(colName.includes('UNIDAD') && colName.includes('POS')) mesesData[mes].in += val;
-            if(colName.includes('UNIDAD') && colName.includes('NEG')) mesesData[mes].out += val;
+            if(k.includes('UNIDAD') && k.includes('POS')) mesesData[mes].in += val;
+            if(k.includes('UNIDAD') && k.includes('NEG')) mesesData[mes].out += val;
         });
     });
 
@@ -296,7 +294,6 @@ function renderGraficos(consumoPorDepto) {
         options: { ...optionsBase, plugins: { legend: { display: true, position: 'bottom' } } }
     });
 
-    // --- GRÁFICO 2: Top 12 Departamentos ---
     let sortedDept = Object.entries(consumoPorDepto).sort((a,b)=>b[1]-a[1]).slice(0,12);
     charts.cDept = new Chart(document.getElementById('c-dept').getContext('2d'), {
         type: 'bar',
@@ -307,7 +304,6 @@ function renderGraficos(consumoPorDepto) {
         options: optionsBase
     });
 
-    // --- GRÁFICO 3: Top 12 Categorías ---
     let catSaldo = {};
     masterData.forEach(d => catSaldo[d.Categoria] = (catSaldo[d.Categoria] || 0) + d.Costo);
     let sortedCat = Object.entries(catSaldo).sort((a,b)=>b[1]-a[1]).slice(0,12);
@@ -321,13 +317,12 @@ function renderGraficos(consumoPorDepto) {
         options: optionsBase
     });
 
-    // --- GRÁFICO 4: Top 15 Proveedores (Barras Horizontales) ---
     let provSaldo = {};
     masterData.forEach(d => provSaldo[d.Proveedor] = (provSaldo[d.Proveedor] || 0) + d.Costo);
     let sortedProv = Object.entries(provSaldo).sort((a,b)=>b[1]-a[1]).slice(0,15);
     
     let optHorizontal = JSON.parse(JSON.stringify(optionsBase));
-    optHorizontal.indexAxis = 'y'; // Cambia el gráfico a horizontal
+    optHorizontal.indexAxis = 'y';
     optHorizontal.plugins.datalabels.anchor = 'end';
     optHorizontal.plugins.datalabels.align = 'right';
 
@@ -340,7 +335,6 @@ function renderGraficos(consumoPorDepto) {
         options: optHorizontal
     });
 
-    // --- GRÁFICO 5: Top 15 Grupos de Suministro ---
     let grpSaldo = {};
     masterData.forEach(d => { if(d.Grupo) grpSaldo[d.Grupo] = (grpSaldo[d.Grupo] || 0) + d.Costo; });
     let sortedGrp = Object.entries(grpSaldo).sort((a,b)=>b[1]-a[1]).slice(0,15);
