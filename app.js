@@ -68,6 +68,20 @@ $(document).ready(function () {
         $('#main-filters').slideDown();
         $('#dashboard-principal').fadeIn(); 
     });
+
+    // CUSTOM GLOBAL SEARCH
+    $('#custom-table-search').on('keyup', function() {
+        let val = $(this).val();
+        if (tableDetalle) {
+            tableDetalle.search(val).draw();
+        }
+        if (tableMovsResumen) {
+            tableMovsResumen.search(val).draw();
+        }
+        if (tableMovsDetalle) {
+            tableMovsDetalle.search(val).draw();
+        }
+    });
 });
 
 function prepararFiltrosDropdowns() {
