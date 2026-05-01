@@ -63,6 +63,22 @@
 
         /* Estilos Panel Detalle */
         .detalle-header { background-color: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.06); margin: 0 20px 20px 20px; display: flex; justify-content: space-between; align-items: center; border-left: 6px solid var(--brand-red);}
+
+        /* Nuevos Estilos Corporativos para Tablas (DataTables) */
+        table.dataTable, .table-bordered { border: 1px solid var(--brand-blue) !important; border-collapse: collapse !important; }
+        .table-bordered td, .table-bordered th { border: 1px solid rgba(1, 32, 148, 0.2) !important; }
+        .table-bordered thead th { border-bottom: 3px solid var(--brand-red) !important; border-top: none !important; border-left: 1px solid rgba(255, 255, 255, 0.2) !important; border-right: 1px solid rgba(255, 255, 255, 0.2) !important; }
+
+        /* Paginación de DataTables */
+        .page-item.active .page-link { background-color: var(--brand-blue) !important; border-color: var(--brand-blue) !important; color: white !important; }
+        .page-link { color: var(--brand-blue) !important; }
+        .page-link:hover { background-color: rgba(1, 32, 148, 0.1) !important; border-color: var(--brand-blue) !important; }
+
+        /* Controles de DataTables (Buscar, longitud) */
+        .dataTables_wrapper .dataTables_filter input { border: 1px solid var(--brand-blue) !important; border-radius: 4px; padding: 4px 8px; outline: none; }
+        .dataTables_wrapper .dataTables_filter input:focus { box-shadow: 0 0 0 0.2rem rgba(1, 32, 148, 0.25) !important; border-color: var(--brand-blue) !important; }
+        .dataTables_wrapper .dataTables_length select { border: 1px solid var(--brand-blue) !important; border-radius: 4px; padding: 4px 8px; outline: none; }
+        .dataTables_wrapper .dataTables_length select:focus { box-shadow: 0 0 0 0.2rem rgba(1, 32, 148, 0.25) !important; border-color: var(--brand-blue) !important; }
     </style>
 </head>
 <body>
