@@ -9,7 +9,7 @@ let tableDetalle, tableMovsResumen, tableMovsDetalle;
 
 const MESES_ORDEN = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'];
 
-// Reglas de Negocio y Clasificación
+// Reglas de Negocio y Clasificación Inteligente
 const reglas = {
     cleanNumber: (val) => {
         if (!val || val === '') return 0;
@@ -57,7 +57,7 @@ function normalizeRow(row) {
     return normalized;
 }
 
-// Inicialización de Documento
+// Inicialización
 $(document).ready(function () {
     $('.select2').select2({ theme: 'bootstrap-5', placeholder: "Todos...", allowClear: true });
     $('#fecha-hoy').text(new Date().toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' }));
@@ -70,28 +70,26 @@ $(document).ready(function () {
         rawMovimientos = results[1].data.map(normalizeRow);
         
         prepararFiltrosDropdowns();
+        // GENERAMOS EL INVENTARIO DE SALDOS UNA SOLA VEZ, QUEDA FIJO Y PROTEGIDO
+        renderizarSaldosFijos(); 
+        
         bindEventosFiltros();
         aplicarFiltrosYRenderizar(); 
         
         $('#loader-overlay').fadeOut();
     });
 
-    // Eventos de botones
     $('#btn-reset-real').click(function() {
         $('.select2').val(null).trigger('change');
         $('#btnFlujoAmbos').prop('checked', true).trigger('change');
         $('#f-metric').val('und').trigger('change.select2'); 
     });
 
-    // Evento para abrir el Detalle al hacer clic en una fila de la tabla Resumen
     $('#tablaMovsResumen tbody').on('click', 'tr', function () {
         let data = tableMovsResumen.row(this).data();
-        if(data) {
-            abrirDashboardDetalle(data.Mes, data.Departamento);
-        }
+        if(data) abrirDashboardDetalle(data.Mes, data.Departamento);
     });
 
-    // Evento para volver del Detalle al Resumen
     $('#btn-volver-resumen').click(function() {
         $('#dashboard-detalle').hide();
         $('#main-filters').slideDown();
@@ -100,16 +98,7 @@ $(document).ready(function () {
 });
 
 function prepararFiltrosDropdowns() {
-    let setTipo = new Set();
-    let setCat = new Set();
-    let setProv = new Set();
-    let setDep = new Set();
-    
-    rawSaldos.forEach(r => {
-        if(r['TIPO_UBICACION']) setTipo.add(r['TIPO_UBICACION']);
-        if(r['CATEGORIA']) setCat.add(reglas.cleanName(r['CATEGORIA']));
-        if(r['PROVEEDOR']) setProv.add(reglas.cleanName(r['PROVEEDOR']));
-    });
+    let setTipo = new Set(), setCat = new Set(), setProv = new Set(), setDep = new Set();
     
     rawMovimientos.forEach(r => {
         if(r['TIPO_UBICACION']) setTipo.add(r['TIPO_UBICACION']);
@@ -124,15 +113,9 @@ function prepararFiltrosDropdowns() {
         Array.from(dataSet).sort().forEach(item => select.append(new Option(item, item)));
     };
 
-    llenar('#f-tipo', setTipo);
-    llenar('#f-cat', setCat);
-    llenar('#f-prov', setProv);
-    llenar('#f-dep', setDep);
-    
+    llenar('#f-tipo', setTipo); llenar('#f-cat', setCat); llenar('#f-prov', setProv); llenar('#f-dep', setDep);
     $('#f-year').empty().append(new Option('2025', '2025')).append(new Option('2026', '2026'));
-    $('#f-mes').empty();
-    MESES_ORDEN.forEach(m => $('#f-mes').append(new Option(m, m)));
-    
+    $('#f-mes').empty(); MESES_ORDEN.forEach(m => $('#f-mes').append(new Option(m, m)));
     $('.select2:not(#f-metric)').val(null).trigger('change.select2');
 }
 
@@ -141,7 +124,52 @@ function bindEventosFiltros() {
     $('input[name="btnFlujo"]').on('change', aplicarFiltrosYRenderizar);
 }
 
-// Motor Principal de Filtrado
+// 1. FUNCIÓN PARA EL INVENTARIO FIJO (Protegido de filtros de movimiento)
+function renderizarSaldosFijos() {
+    let totalCosto = 0;
+    let totalStock = 0;
+    let saldosTabla = [];
+    
+    rawSaldos.forEach(row => {
+        let stock = reglas.cleanNumber(row['SALDOUNDTOTAL']);
+        let costo = reglas.cleanNumber(row['TOTAL COSTO UND.']);
+        
+        totalStock += stock;
+        totalCosto += costo;
+
+        saldosTabla.push({
+            Division: reglas.cleanName(row['DIVISION']),
+            Categoria: reglas.cleanName(row['CATEGORIA']),
+            Grupo: reglas.cleanName(row['GRUPO']),
+            Proveedor: reglas.cleanName(row['PROVEEDOR']),
+            Stock: stock,
+            Costo: costo
+        });
+    });
+
+    // Actualizamos las dos tarjetas principales arriba
+    $('#k-cost').text('L ' + totalCosto.toLocaleString('en-US', {minimumFractionDigits: 2}));
+    $('#k-stock').text(totalStock.toLocaleString('en-US'));
+
+    // Creamos la tabla (Con sus 6 columnas originales)
+    if($.fn.DataTable.isDataTable('#tablaDetalle')) return;
+    tableDetalle = $('#tablaDetalle').DataTable({
+        data: saldosTabla,
+        pageLength: 15,
+        language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json' },
+        order: [[4, 'desc']], // Ordenar por Stock
+        columns: [
+            { data: 'Division' }, 
+            { data: 'Categoria' }, 
+            { data: 'Grupo' }, 
+            { data: 'Proveedor' },
+            { data: 'Stock', className: 'num', render: (d, t) => t==='display' ? `<span class="badge bg-${d>0?'success':(d<0?'danger':'dark')} px-3 py-2">${d.toLocaleString('en-US')}</span>` : d },
+            { data: 'Costo', className: 'num', render: (d, t) => t==='display' ? `<strong>L ${d.toLocaleString('en-US', {minimumFractionDigits:2})}</strong>` : d }
+        ]
+    });
+}
+
+// 2. FUNCIÓN DE MOVIMIENTOS (Afectada por todos los filtros)
 function aplicarFiltrosYRenderizar() {
     const fYear = $('#f-year').val() || [];
     const fMes = $('#f-mes').val() || [];
@@ -152,48 +180,9 @@ function aplicarFiltrosYRenderizar() {
     const fMetric = $('#f-metric').val(); 
     const fFlujo = $('input[name="btnFlujo"]:checked').val();
 
-    // 1. Filtrar Saldos
-    let totalCosto = 0;
-    let totalStock = 0;
-    let saldosTabla = [];
-    
-    rawSaldos.forEach(row => {
-        let tipo = row['TIPO_UBICACION'];
-        let cat = reglas.cleanName(row['CATEGORIA']);
-        let prov = reglas.cleanName(row['PROVEEDOR']);
-        
-        if (fTipo.length && !fTipo.includes(tipo)) return;
-        if (fCat.length && !fCat.includes(cat)) return;
-        if (fProv.length && !fProv.includes(prov)) return;
-
-        let stock = reglas.cleanNumber(row['SALDOUNDTOTAL']);
-        let costo = reglas.cleanNumber(row['TOTAL COSTO UND.']);
-        
-        totalStock += stock;
-        totalCosto += costo;
-
-        saldosTabla.push({
-            Division: reglas.cleanName(row['DIVISION']),
-            Categoria: cat,
-            Grupo: reglas.cleanName(row['GRUPO']),
-            Proveedor: prov,
-            Stock: stock,
-            Costo: costo
-        });
-    });
-
-    // 2. Filtrar Movimientos
-    let totalPos = 0;
-    let totalNeg = 0;
-    let consumoPorDepto = {};
-    let consumoPorCat = {};
-    let consumoPorProv = {};
-    let consumoPorGrp = {};
-    
-    let lineIn25 = Array(12).fill(0);
-    let lineOut25 = Array(12).fill(0);
-    let lineIn26 = Array(12).fill(0);
-    let lineOut26 = Array(12).fill(0);
+    let totalPos = 0, totalNeg = 0;
+    let consumoPorDepto = {}, consumoPorCat = {}, consumoPorProv = {}, consumoPorGrp = {};
+    let lineIn25 = Array(12).fill(0), lineOut25 = Array(12).fill(0), lineIn26 = Array(12).fill(0), lineOut26 = Array(12).fill(0);
     
     filteredMovsData = []; 
     let resumenMap = {}; 
@@ -214,36 +203,22 @@ function aplicarFiltrosYRenderizar() {
         if (fDep.length && !fDep.includes(depto)) return;
 
         let mesIdx = MESES_ORDEN.indexOf(mesStr);
-        let filaPos = 0;
-        let filaNeg = 0;
-        let out25 = 0, out26 = 0, in25 = 0, in26 = 0;
+        let filaPos = 0, filaNeg = 0, out25 = 0, out26 = 0, in25 = 0, in26 = 0;
 
         Object.keys(row).forEach(k => {
             if (!k.includes(metricKey)) return; 
             
             let val = reglas.cleanNumber(row[k]);
-            let isPos = k.includes('POS');
-            let isNeg = k.includes('NEG'); 
-            let is25 = k.includes('2025');
-            let is26 = k.includes('2026');
+            let isPos = k.includes('POS'), isNeg = k.includes('NEG'); 
+            let is25 = k.includes('2025'), is26 = k.includes('2026');
 
             if (fYear.length > 0) {
                 if (is25 && !fYear.includes('2025')) return;
                 if (is26 && !fYear.includes('2026')) return;
             }
 
-            if (isPos) { 
-                totalPos += val; 
-                filaPos += val; 
-                if(is25) in25 += val; 
-                if(is26) in26 += val; 
-            }
-            if (isNeg) { 
-                totalNeg += val; 
-                filaNeg += val; 
-                if(is25) out25 += val; 
-                if(is26) out26 += val; 
-            }
+            if (isPos) { totalPos += val; filaPos += val; if(is25) in25 += val; if(is26) in26 += val; }
+            if (isNeg) { totalNeg += val; filaNeg += val; if(is25) out25 += val; if(is26) out26 += val; }
 
             if (mesIdx >= 0) {
                 if(is25 && isPos) lineIn25[mesIdx] += Math.abs(val);
@@ -254,26 +229,10 @@ function aplicarFiltrosYRenderizar() {
         });
 
         if(out25 !== 0 || out26 !== 0 || in25 !== 0 || in26 !== 0) {
-            filteredMovsData.push({
-                Mes: mesStr,
-                Tipo: tipo,
-                Departamento: depto,
-                Categoria: cat,
-                Grupo: grp,
-                Out25: out25,
-                Out26: out26,
-                In25: in25,
-                In26: in26
-            });
-            
+            filteredMovsData.push({ Mes: mesStr, Tipo: tipo, Departamento: depto, Categoria: cat, Grupo: grp, Out25: out25, Out26: out26, In25: in25, In26: in26 });
             let keyResumen = mesStr + '|' + depto;
-            if(!resumenMap[keyResumen]) {
-                resumenMap[keyResumen] = { Mes: mesStr, Tipo: tipo, Departamento: depto, Out25: 0, Out26: 0, In25: 0, In26: 0 };
-            }
-            resumenMap[keyResumen].Out25 += out25;
-            resumenMap[keyResumen].Out26 += out26;
-            resumenMap[keyResumen].In25 += in25;
-            resumenMap[keyResumen].In26 += in26;
+            if(!resumenMap[keyResumen]) resumenMap[keyResumen] = { Mes: mesStr, Tipo: tipo, Departamento: depto, Out25: 0, Out26: 0, In25: 0, In26: 0 };
+            resumenMap[keyResumen].Out25 += out25; resumenMap[keyResumen].Out26 += out26; resumenMap[keyResumen].In25 += in25; resumenMap[keyResumen].In26 += in26;
         }
 
         let valorTops = 0;
@@ -286,164 +245,58 @@ function aplicarFiltrosYRenderizar() {
         consumoPorGrp[grp] = (consumoPorGrp[grp] || 0) + valorTops;
     });
 
-    // 3. Actualizar Datos en HTML
     let prefix = fMetric === 'cst' ? 'L ' : '';
-    let configNum = {
-        minimumFractionDigits: (fMetric === 'cst' ? 2 : 0), 
-        maximumFractionDigits: (fMetric === 'cst' ? 2 : 0)
-    };
+    let configNum = { minimumFractionDigits: (fMetric === 'cst' ? 2 : 0), maximumFractionDigits: (fMetric === 'cst' ? 2 : 0) };
 
-    $('#k-cost').text('L ' + totalCosto.toLocaleString('en-US', {minimumFractionDigits: 2}));
-    $('#k-stock').text(totalStock.toLocaleString('en-US'));
     $('#k-pos').text(prefix + Math.abs(totalPos).toLocaleString('en-US', configNum));
     $('#k-neg').text(prefix + Math.abs(totalNeg).toLocaleString('en-US', configNum));
 
     let topDepto = Object.entries(consumoPorDepto).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1]));
     let topCat = Object.entries(consumoPorCat).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1]));
-    
     $('#k-top-d').text(topDepto.length ? topDepto[0][0].substring(0,25) : '-');
     $('#k-top-c').text(topCat.length ? topCat[0][0].substring(0,25) : '-');
 
-    // 4. Llamar a las funciones de pintado
-    actualizarTablaSaldos(saldosTabla);
     actualizarTablaMovsResumen(Object.values(resumenMap), prefix, configNum);
-
-    actualizarGraficos({
-        lIn25: lineIn25,
-        lOut25: lineOut25,
-        lIn26: lineIn26,
-        lOut26: lineOut26,
-        cDep: consumoPorDepto,
-        cCat: consumoPorCat,
-        cPrv: consumoPorProv,
-        cGrp: consumoPorGrp,
-        fFlujo: fFlujo,
-        fYear: fYear,
-        px: prefix,
-        cf: configNum
-    });
+    actualizarGraficos({ lIn25: lineIn25, lOut25: lineOut25, lIn26: lineIn26, lOut26: lineOut26, cDep: consumoPorDepto, cCat: consumoPorCat, cPrv: consumoPorProv, cGrp: consumoPorGrp, fFlujo: fFlujo, fYear: fYear, px: prefix, cf: configNum });
 }
 
-// DataTables - Auditoría de Saldos (Restaurada a 6 columnas sin el Tipo)
-function actualizarTablaSaldos(datos) {
-    if($.fn.DataTable.isDataTable('#tablaDetalle')) {
-        $('#tablaDetalle').DataTable().destroy();
-    }
-    
-    tableDetalle = $('#tablaDetalle').DataTable({
-        data: datos,
-        pageLength: 15,
-        language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json' },
-        order: [[4, 'desc']], // Ordenar por Stock por defecto
-        columns: [
-            { data: 'Division' },
-            { data: 'Categoria' },
-            { data: 'Grupo' },
-            { data: 'Proveedor' },
-            { 
-                data: 'Stock', 
-                className: 'num', 
-                render: (d, t) => t==='display' ? `<span class="badge bg-${d>0?'success':(d<0?'danger':'dark')} px-3 py-2">${d.toLocaleString('en-US')}</span>` : d 
-            },
-            { 
-                data: 'Costo', 
-                className: 'num', 
-                render: (d, t) => t==='display' ? `<strong>L ${d.toLocaleString('en-US', {minimumFractionDigits:2})}</strong>` : d 
-            }
-        ]
-    });
-}
-
-// DataTables - Resumen de Movimientos (Con mejora visual en letras y colores)
 function actualizarTablaMovsResumen(datos, px, cf) {
-    if($.fn.DataTable.isDataTable('#tablaMovsResumen')) {
-        $('#tablaMovsResumen').DataTable().destroy();
-    }
-    
+    if($.fn.DataTable.isDataTable('#tablaMovsResumen')) { $('#tablaMovsResumen').DataTable().destroy(); }
     tableMovsResumen = $('#tablaMovsResumen').DataTable({
-        data: datos,
-        pageLength: 10,
-        language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json' },
-        order: [[0, 'asc']],
+        data: datos, pageLength: 10, language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json' }, order: [[0, 'asc']],
         columns: [
-            { data: 'Mes' },
-            { 
-                data: 'Tipo', 
-                render: d => `<span class="badge-tipo">${d}</span>` 
-            },
+            { data: 'Mes' }, 
+            { data: 'Tipo', render: d => `<span class="badge-tipo">${d}</span>` }, 
             { data: 'Departamento' },
-            { 
-                data: 'Out25', 
-                className: 'num text-danger fw-bold', 
-                render: (d, t) => t==='display' ? (d!==0 ? px + Math.abs(d).toLocaleString('en-US', cf) : '-') : Math.abs(d) 
-            },
-            { 
-                data: 'Out26', 
-                className: 'num text-danger fw-bold', 
-                render: (d, t) => t==='display' ? (d!==0 ? px + Math.abs(d).toLocaleString('en-US', cf) : '-') : Math.abs(d) 
-            },
-            { 
-                data: 'In25', 
-                className: 'num text-success fw-bold', 
-                render: (d, t) => t==='display' ? (d!==0 ? px + d.toLocaleString('en-US', cf) : '-') : d 
-            },
-            { 
-                data: 'In26', 
-                className: 'num text-success fw-bold', 
-                render: (d, t) => t==='display' ? (d!==0 ? px + d.toLocaleString('en-US', cf) : '-') : d 
-            }
+            { data: 'Out25', className: 'num text-danger fw-bold', render: (d, t) => t==='display' ? (d!==0 ? px + Math.abs(d).toLocaleString('en-US', cf) : '-') : Math.abs(d) },
+            { data: 'Out26', className: 'num text-danger fw-bold', render: (d, t) => t==='display' ? (d!==0 ? px + Math.abs(d).toLocaleString('en-US', cf) : '-') : Math.abs(d) },
+            { data: 'In25', className: 'num text-success fw-bold', render: (d, t) => t==='display' ? (d!==0 ? px + d.toLocaleString('en-US', cf) : '-') : d },
+            { data: 'In26', className: 'num text-success fw-bold', render: (d, t) => t==='display' ? (d!==0 ? px + d.toLocaleString('en-US', cf) : '-') : d }
         ]
     });
 }
 
-// Funcionalidad de Inmersión (Drill-Down)
 function abrirDashboardDetalle(mes, depto) {
     $('#titulo-detalle').text(`${depto} | ${mes}`);
-    
-    let px = $('#f-metric').val() === 'cst' ? 'L ' : '';
-    let cf = {
-        minimumFractionDigits: ($('#f-metric').val() === 'cst' ? 2 : 0), 
-        maximumFractionDigits: ($('#f-metric').val() === 'cst' ? 2 : 0)
-    };
-    
-    let dataDetalle = [];
-    let sumOut25 = 0, sumOut26 = 0, sumIn25 = 0, sumIn26 = 0;
-    let rankGrupo = {};
+    let px = $('#f-metric').val() === 'cst' ? 'L ' : '', cf = { minimumFractionDigits: ($('#f-metric').val() === 'cst' ? 2 : 0), maximumFractionDigits: ($('#f-metric').val() === 'cst' ? 2 : 0) };
+    let dataDetalle = [], sumOut25 = 0, sumOut26 = 0, sumIn25 = 0, sumIn26 = 0, rankGrupo = {};
 
     filteredMovsData.forEach(d => {
         if(d.Mes !== mes || d.Departamento !== depto) return;
-        
-        sumOut25 += d.Out25;
-        sumOut26 += d.Out26;
-        sumIn25 += d.In25;
-        sumIn26 += d.In26;
-        
+        sumOut25 += d.Out25; sumOut26 += d.Out26; sumIn25 += d.In25; sumIn26 += d.In26;
         rGValue = Math.abs(d.Out25) + Math.abs(d.Out26);
         rankGrupo[d.Grupo] = (rankGrupo[d.Grupo] || 0) + rGValue;
-        
         dataDetalle.push(d);
     });
 
-    $('#det-out-25').text(px + Math.abs(sumOut25).toLocaleString('en-US', cf));
-    $('#det-out-26').text(px + Math.abs(sumOut26).toLocaleString('en-US', cf));
-    $('#det-in-25').text(px + sumIn25.toLocaleString('en-US', cf));
-    $('#det-in-26').text(px + sumIn26.toLocaleString('en-US', cf));
+    $('#det-out-25').text(px + Math.abs(sumOut25).toLocaleString('en-US', cf)); $('#det-out-26').text(px + Math.abs(sumOut26).toLocaleString('en-US', cf));
+    $('#det-in-25').text(px + sumIn25.toLocaleString('en-US', cf)); $('#det-in-26').text(px + sumIn26.toLocaleString('en-US', cf));
 
-    if($.fn.DataTable.isDataTable('#tablaMovsDetalle')) {
-        $('#tablaMovsDetalle').DataTable().destroy();
-    }
-
+    if($.fn.DataTable.isDataTable('#tablaMovsDetalle')) { $('#tablaMovsDetalle').DataTable().destroy(); }
     tableMovsDetalle = $('#tablaMovsDetalle').DataTable({
-        data: dataDetalle,
-        pageLength: 10,
-        language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json' },
-        order: [[5, 'asc']],
+        data: dataDetalle, pageLength: 10, language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json' }, order: [[5, 'asc']],
         columns: [
-            { data: 'Mes' },
-            { data: 'Tipo', render: d => `<span class="badge-tipo">${d}</span>` },
-            { data: 'Departamento' },
-            { data: 'Categoria' },
-            { data: 'Grupo' },
+            { data: 'Mes' }, { data: 'Tipo', render: d => `<span class="badge-tipo">${d}</span>` }, { data: 'Departamento' }, { data: 'Categoria' }, { data: 'Grupo' },
             { data: 'Out25', className: 'num text-danger fw-bold', render: (d, t) => t==='display' ? (d!==0 ? px + Math.abs(d).toLocaleString('en-US', cf) : '-') : Math.abs(d) },
             { data: 'Out26', className: 'num text-danger fw-bold', render: (d, t) => t==='display' ? (d!==0 ? px + Math.abs(d).toLocaleString('en-US', cf) : '-') : Math.abs(d) },
             { data: 'In25', className: 'num text-success fw-bold', render: (d, t) => t==='display' ? (d!==0 ? px + d.toLocaleString('en-US', cf) : '-') : d },
@@ -451,185 +304,41 @@ function abrirDashboardDetalle(mes, depto) {
         ]
     });
 
-    // Gráfico de Top Grupos
     if(charts.cDetGrp) charts.cDetGrp.destroy();
-    
     let sortedDG = Object.entries(rankGrupo).sort((a,b) => b[1] - a[1]).slice(0, 10);
-    
     charts.cDetGrp = new Chart(document.getElementById('c-detalle-grupo'), {
-        type: 'bar',
-        data: {
-            labels: sortedDG.map(x => x[0].substring(0, 25)),
-            datasets: [{
-                data: sortedDG.map(x => x[1]),
-                backgroundColor: '#E1251B',
-                borderRadius: 4
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            indexAxis: 'y',
-            scales: {
-                x: { display: false },
-                y: { grid: { display: false }, ticks: { color: '#000', font: { weight: 'bold', size: 10 } } }
-            },
-            plugins: {
-                legend: { display: false },
-                datalabels: {
-                    anchor: 'end',
-                    align: 'right',
-                    color: '#000',
-                    font: { weight: 'bold' },
-                    formatter: v => v > 0 ? px + v.toLocaleString('en-US', cf) : ''
-                }
-            }
-        }
+        type: 'bar', data: { labels: sortedDG.map(x => x[0].substring(0, 25)), datasets: [{ data: sortedDG.map(x => x[1]), backgroundColor: '#E1251B', borderRadius: 4 }] },
+        options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', scales: { x: { display: false }, y: { grid: { display: false }, ticks: { color: '#000', font: { weight: 'bold', size: 10 } } } }, plugins: { legend: { display: false }, datalabels: { anchor: 'end', align: 'right', color: '#000', font: { weight: 'bold' }, formatter: v => v > 0 ? px + v.toLocaleString('en-US', cf) : '' } } }
     });
 
-    $('#main-filters').slideUp();
-    $('#dashboard-principal').hide();
-    $('#dashboard-detalle').fadeIn();
+    $('#main-filters').slideUp(); $('#dashboard-principal').hide(); $('#dashboard-detalle').fadeIn();
 }
 
-// Pintado de Gráficos Principales
 function actualizarGraficos(g) {
     Chart.defaults.font.family = "'Segoe UI', Arial, sans-serif";
     let dsLineas = [];
-    
-    let show25 = !g.fYear.length || g.fYear.includes('2025');
-    let show26 = !g.fYear.length || g.fYear.includes('2026');
-
-    if (show25 && (g.fFlujo !== 'out')) {
-        dsLineas.push({ label: 'Entradas 2025', data: g.lIn25, borderColor: '#00b4db', borderDash: [5, 5], tension: 0.4 });
-    }
-    if (show25 && (g.fFlujo !== 'in')) {
-        dsLineas.push({ label: 'Salidas 2025', data: g.lOut25, borderColor: '#ff7b72', borderDash: [5, 5], tension: 0.4 });
-    }
-    if (show26 && (g.fFlujo !== 'out')) {
-        dsLineas.push({ label: 'Entradas 2026', data: g.lIn26, borderColor: '#012094', borderWidth: 3, tension: 0.4 });
-    }
-    if (show26 && (g.fFlujo !== 'in')) {
-        dsLineas.push({ label: 'Salidas 2026', data: g.lOut26, borderColor: '#E1251B', borderWidth: 3, tension: 0.4 });
-    }
+    let show25 = !g.fYear.length || g.fYear.includes('2025'), show26 = !g.fYear.length || g.fYear.includes('2026');
+    if (show25 && (g.fFlujo !== 'out')) dsLineas.push({ label: 'Entradas 2025', data: g.lIn25, borderColor: '#00b4db', borderDash: [5, 5], tension: 0.4 });
+    if (show25 && (g.fFlujo !== 'in')) dsLineas.push({ label: 'Salidas 2025', data: g.lOut25, borderColor: '#ff7b72', borderDash: [5, 5], tension: 0.4 });
+    if (show26 && (g.fFlujo !== 'out')) dsLineas.push({ label: 'Entradas 2026', data: g.lIn26, borderColor: '#012094', borderWidth: 3, tension: 0.4 });
+    if (show26 && (g.fFlujo !== 'in')) dsLineas.push({ label: 'Salidas 2026', data: g.lOut26, borderColor: '#E1251B', borderWidth: 3, tension: 0.4 });
 
     if(charts.cResp) charts.cResp.destroy();
-    
-    charts.cResp = new Chart(document.getElementById('c-respiracion'), {
-        type: 'line',
-        data: { labels: MESES_ORDEN, datasets: dsLineas },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            layout: { padding: { top: 20, right: 20 } },
-            scales: {
-                x: { grid: { display: false }, ticks: { color: '#000', font: { weight: 'bold' } } },
-                y: { display: false }
-            },
-            plugins: {
-                legend: { position: 'bottom', labels: { color: '#000', font: { weight: 'bold' } } },
-                datalabels: { display: false },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            return context.dataset.label + ': ' + g.px + context.parsed.y.toLocaleString('en-US', g.cf);
-                        }
-                    }
-                }
-            }
-        }
-    });
+    charts.cResp = new Chart(document.getElementById('c-respiracion'), { type: 'line', data: { labels: MESES_ORDEN, datasets: dsLineas }, options: { responsive: true, maintainAspectRatio: false, layout: { padding: { top: 20, right: 20 } }, scales: { x: { grid: { display: false }, ticks: { color: '#000', font: { weight: 'bold' } } }, y: { display: false } }, plugins: { legend: { position: 'bottom', labels: { color: '#000', font: { weight: 'bold' } } }, datalabels: { display: false }, tooltip: { callbacks: { label: function(context) { return context.dataset.label + ': ' + g.px + context.parsed.y.toLocaleString('en-US', g.cf); } } } } });
 
-    // Función para crear Gráficos Verticales (-45 grados)
     const dibujarVertical = (id, dataObj, color) => {
         if(charts[id]) charts[id].destroy();
-        
         let arr = Object.entries(dataObj).sort((a,b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 12);
-        
-        charts[id] = new Chart(document.getElementById(id), {
-            type: 'bar',
-            data: {
-                labels: arr.map(x => x[0].substring(0, 18)),
-                datasets: [{ data: arr.map(x => Math.abs(x[1])), backgroundColor: color, borderRadius: 4 }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                layout: { padding: { top: 75 } },
-                scales: {
-                    x: { grid: { display: false }, ticks: { maxRotation: 45, minRotation: 45, color: '#000', font: { weight: 'bold' } } },
-                    y: { display: false }
-                },
-                plugins: {
-                    legend: { display: false },
-                    datalabels: {
-                        display: true,
-                        anchor: 'end',
-                        align: 'end',
-                        rotation: -45,
-                        offset: 5,
-                        color: '#000',
-                        font: { weight: 'bold', size: 11 },
-                        formatter: v => v > 0 ? g.px + v.toLocaleString('en-US', g.cf) : ''
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                return g.px + context.parsed.y.toLocaleString('en-US', g.cf);
-                            }
-                        }
-                    }
-                }
-            }
-        });
+        charts[id] = new Chart(document.getElementById(id), { type: 'bar', data: { labels: arr.map(x => x[0].substring(0, 18)), datasets: [{ data: arr.map(x => Math.abs(x[1])), backgroundColor: color, borderRadius: 4 }] }, options: { responsive: true, maintainAspectRatio: false, layout: { padding: { top: 75 } }, scales: { x: { grid: { display: false }, ticks: { maxRotation: 45, minRotation: 45, color: '#000', font: { weight: 'bold' } } }, y: { display: false } }, plugins: { legend: { display: false }, datalabels: { display: true, anchor: 'end', align: 'end', rotation: -45, offset: 5, color: '#000', font: { weight: 'bold', size: 11 }, formatter: v => v > 0 ? g.px + v.toLocaleString('en-US', g.cf) : '' }, tooltip: { callbacks: { label: function(context) { return g.px + context.parsed.y.toLocaleString('en-US', g.cf); } } } } });
     };
 
-    dibujarVertical('c-dept', g.cDep, '#E1251B');
-    dibujarVertical('c-cat', g.cCat, '#012094');
+    dibujarVertical('c-dept', g.cDep, '#E1251B'); dibujarVertical('c-cat', g.cCat, '#012094');
 
-    // Función para crear Gráficos Horizontales
     const dibujarHorizontal = (id, dataObj, color) => {
         if(charts[id]) charts[id].destroy();
-        
         let arr = Object.entries(dataObj).sort((a,b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 15);
-        
-        charts[id] = new Chart(document.getElementById(id), {
-            type: 'bar',
-            data: {
-                labels: arr.map(x => x[0].substring(0, 25)),
-                datasets: [{ data: arr.map(x => Math.abs(x[1])), backgroundColor: color, borderRadius: 4 }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                indexAxis: 'y',
-                layout: { padding: { right: 120 } },
-                scales: {
-                    x: { display: false },
-                    y: { grid: { display: false }, ticks: { color: '#000', font: { weight: 'bold' } } }
-                },
-                plugins: {
-                    legend: { display: false },
-                    datalabels: {
-                        display: true,
-                        anchor: 'end',
-                        align: 'right',
-                        color: '#000',
-                        font: { weight: 'bold', size: 11 },
-                        formatter: v => v > 0 ? g.px + v.toLocaleString('en-US', g.cf) : ''
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                return g.px + context.parsed.x.toLocaleString('en-US', g.cf);
-                            }
-                        }
-                    }
-                }
-            }
-        });
+        charts[id] = new Chart(document.getElementById(id), { type: 'bar', data: { labels: arr.map(x => x[0].substring(0, 25)), datasets: [{ data: arr.map(x => Math.abs(x[1])), backgroundColor: color, borderRadius: 4 }] }, options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', layout: { padding: { right: 120 } }, scales: { x: { display: false }, y: { grid: { display: false }, ticks: { color: '#000', font: { weight: 'bold' } } } }, plugins: { legend: { display: false }, datalabels: { display: true, anchor: 'end', align: 'right', color: '#000', font: { weight: 'bold', size: 11 }, formatter: v => v > 0 ? g.px + v.toLocaleString('en-US', g.cf) : '' }, tooltip: { callbacks: { label: function(context) { return g.px + context.parsed.x.toLocaleString('en-US', g.cf); } } } } });
     };
 
-    dibujarHorizontal('c-prov', g.cPrv, '#2c3e50');
-    dibujarHorizontal('c-grp', g.cGrp, '#00b4db');
+    dibujarHorizontal('c-prov', g.cPrv, '#2c3e50'); dibujarHorizontal('c-grp', g.cGrp, '#00b4db');
 }
