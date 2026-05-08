@@ -19,6 +19,24 @@ const reglas = {
     cleanName: (name) => {
         if (!name || name === '0' || name === 0 || name.toString().trim() === '') return "SIN ESPECIFICAR";
         return name.toString().toUpperCase().trim();
+    },
+    // MOTOR DE CLASIFICACIÓN INTELIGENTE
+    getTipoUbicacion: (almacen, depto) => {
+        almacen = (almacen || "").toUpperCase().trim();
+        depto = (depto || "").toUpperCase().trim();
+
+        if (depto.includes("HOTEL")) return "HOTELES";
+        if (depto.includes("CASA")) return "CASAS";
+        
+        // Expresión regular para placas de vehículos y palabras clave
+        const isVehiculo = depto.includes("BUSITO") || depto.includes("CAMION") || depto.includes("TOYOTA") || depto.includes("HONDA") || depto.includes("ISUZU") || depto.includes("MITSUBISHI") || depto.includes("HYUNDAI") || depto.includes("KIA") || depto.includes("VEHICULO") || /^[HJ][A-Z]{2}\d{4}$/.test(almacen);
+        if (isVehiculo) return "VEHICULOS";
+
+        if (almacen.startsWith("T") || depto.includes("AEC") || depto.includes("DS ") || depto === "DS" || depto.includes("MAYOREO") || depto.includes("MEGABODEGA") || depto.includes("VITRINA")) {
+            return "TIENDAS";
+        }
+
+        return "DEPARTAMENTOS";
     }
 };
 
@@ -30,6 +48,12 @@ function normalizeRow(row) {
             normalized[newKey] = row[key];
         }
     }
+    
+    // Clasificar automáticamente la fila
+    let almacen = normalized['ALMACEN'] || normalized['SUCURSAL'] || "";
+    let depto = normalized['DEPARTAMENTO2'] || normalized['DIVISION'] || "";
+    normalized['TIPO_UBICACION'] = reglas.getTipoUbicacion(almacen, depto);
+    
     return normalized;
 }
 
@@ -55,43 +79,29 @@ $(document).ready(function () {
         $('#f-metric').val('und').trigger('change.select2'); 
     });
 
-    // EVENTO DRILL-DOWN AL HACER CLIC EN LA TABLA
     $('#tablaMovsResumen tbody').on('click', 'tr', function () {
         if(!tableMovsResumen) return;
         let data = tableMovsResumen.row(this).data();
         if(data) abrirDashboardDetalle(data.Mes, data.Departamento);
     });
     
-    // BOTÓN VOLVER
     $('#btn-volver-resumen').click(function() { 
         $('#dashboard-detalle').hide(); 
         $('#main-filters').slideDown();
         $('#dashboard-principal').fadeIn(); 
     });
-
-    // CUSTOM GLOBAL SEARCH
-    $('#custom-table-search').on('keyup', function() {
-        let val = $(this).val();
-        if (tableDetalle) {
-            tableDetalle.search(val).draw();
-        }
-        if (tableMovsResumen) {
-            tableMovsResumen.search(val).draw();
-        }
-        if (tableMovsDetalle) {
-            tableMovsDetalle.search(val).draw();
-        }
-    });
 });
 
 function prepararFiltrosDropdowns() {
-    let setCat = new Set(), setProv = new Set(), setDep = new Set();
+    let setTipo = new Set(), setCat = new Set(), setProv = new Set(), setDep = new Set();
     
     rawSaldos.forEach(r => { 
+        if(r['TIPO_UBICACION']) setTipo.add(r['TIPO_UBICACION']);
         if(r['CATEGORIA']) setCat.add(reglas.cleanName(r['CATEGORIA'])); 
         if(r['PROVEEDOR']) setProv.add(reglas.cleanName(r['PROVEEDOR'])); 
     });
     rawMovimientos.forEach(r => { 
+        if(r['TIPO_UBICACION']) setTipo.add(r['TIPO_UBICACION']);
         if(r['DEPARTAMENTO2']) setDep.add(reglas.cleanName(r['DEPARTAMENTO2'])); 
         if(r['CATEGORIA']) setCat.add(reglas.cleanName(r['CATEGORIA']));
         if(r['PROVEEDOR']) setProv.add(reglas.cleanName(r['PROVEEDOR']));
@@ -102,7 +112,7 @@ function prepararFiltrosDropdowns() {
         Array.from(dataSet).sort().forEach(item => select.append(new Option(item, item)));
     };
 
-    llenar('#f-cat', setCat); llenar('#f-prov', setProv); llenar('#f-dep', setDep);
+    llenar('#f-tipo', setTipo); llenar('#f-cat', setCat); llenar('#f-prov', setProv); llenar('#f-dep', setDep);
     $('#f-year').empty().append(new Option('2025', '2025')).append(new Option('2026', '2026'));
     $('#f-mes').empty(); MESES_ORDEN.forEach(m => $('#f-mes').append(new Option(m, m)));
     $('.select2:not(#f-metric)').val(null).trigger('change.select2');
@@ -116,6 +126,7 @@ function bindEventosFiltros() {
 function aplicarFiltrosYRenderizar() {
     const fYear = $('#f-year').val() || [];
     const fMes = $('#f-mes').val() || [];
+    const fTipo = $('#f-tipo').val() || [];
     const fCat = $('#f-cat').val() || [];
     const fProv = $('#f-prov').val() || [];
     const fDep = $('#f-dep').val() || [];
@@ -126,8 +137,11 @@ function aplicarFiltrosYRenderizar() {
     let saldosTabla = [];
     
     rawSaldos.forEach(row => {
+        let tipo = row['TIPO_UBICACION'];
         let cat = reglas.cleanName(row['CATEGORIA']);
         let prov = reglas.cleanName(row['PROVEEDOR']);
+        
+        if (fTipo.length && !fTipo.includes(tipo)) return;
         if (fCat.length && !fCat.includes(cat)) return;
         if (fProv.length && !fProv.includes(prov)) return;
 
@@ -136,8 +150,8 @@ function aplicarFiltrosYRenderizar() {
         totalStock += stock; totalCosto += costo;
 
         saldosTabla.push({
-            Division: reglas.cleanName(row['DIVISION']), Categoria: cat, Grupo: reglas.cleanName(row['GRUPO']),
-            Proveedor: prov, Stock: stock, Costo: costo
+            Tipo: tipo, Division: reglas.cleanName(row['DIVISION']), Categoria: cat, 
+            Grupo: reglas.cleanName(row['GRUPO']), Proveedor: prov, Stock: stock, Costo: costo
         });
     });
 
@@ -152,12 +166,14 @@ function aplicarFiltrosYRenderizar() {
 
     rawMovimientos.forEach(row => {
         let mesStr = (row['MES'] || "SIN ESPECIFICAR").toUpperCase();
+        let tipo = row['TIPO_UBICACION'];
         let cat = reglas.cleanName(row['CATEGORIA']);
         let prov = reglas.cleanName(row['PROVEEDOR']);
         let depto = reglas.cleanName(row['DEPARTAMENTO2']);
         let grp = reglas.cleanName(row['GRUPO']);
 
         if (fMes.length && !fMes.includes(mesStr)) return;
+        if (fTipo.length && !fTipo.includes(tipo)) return;
         if (fCat.length && !fCat.includes(cat)) return;
         if (fProv.length && !fProv.includes(prov)) return;
         if (fDep.length && !fDep.includes(depto)) return;
@@ -191,9 +207,9 @@ function aplicarFiltrosYRenderizar() {
         });
 
         if(out25 !== 0 || out26 !== 0 || in25 !== 0 || in26 !== 0) {
-            filteredMovsData.push({ Mes: mesStr, Departamento: depto, Categoria: cat, Grupo: grp, Out25: out25, Out26: out26, In25: in25, In26: in26 });
+            filteredMovsData.push({ Mes: mesStr, Tipo: tipo, Departamento: depto, Categoria: cat, Grupo: grp, Out25: out25, Out26: out26, In25: in25, In26: in26 });
             let keyResumen = mesStr + '|' + depto;
-            if(!resumenMap[keyResumen]) resumenMap[keyResumen] = { Mes: mesStr, Departamento: depto, Out25: 0, Out26: 0, In25: 0, In26: 0 };
+            if(!resumenMap[keyResumen]) resumenMap[keyResumen] = { Mes: mesStr, Tipo: tipo, Departamento: depto, Out25: 0, Out26: 0, In25: 0, In26: 0 };
             resumenMap[keyResumen].Out25 += out25; resumenMap[keyResumen].Out26 += out26;
             resumenMap[keyResumen].In25 += in25; resumenMap[keyResumen].In26 += in26;
         }
@@ -231,14 +247,12 @@ function aplicarFiltrosYRenderizar() {
     actualizarGraficos({ lineIn25, lineOut25, lineIn26, lineOut26, consumoPorDepto, consumoPorCat, consumoPorProv, consumoPorGrp, fFlujo, fYear, prefix, configNum });
 }
 
-// 5. DATA TABLES
 function actualizarTablaSaldos(datosTabla) {
-    if($.fn.DataTable.isDataTable('#tablaDetalle')) { 
-        $('#tablaDetalle').DataTable().destroy(); 
-    }
+    if($.fn.DataTable.isDataTable('#tablaDetalle')) { $('#tablaDetalle').DataTable().destroy(); }
     tableDetalle = $('#tablaDetalle').DataTable({
-        data: datosTabla, pageLength: 15, language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json' }, order: [[5, 'desc']],
+        data: datosTabla, pageLength: 15, language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json' }, order: [[6, 'desc']],
         columns: [
+            { data: 'Tipo', render: (d) => `<span class="badge bg-secondary">${d}</span>` },
             { data: 'Division' }, { data: 'Categoria' }, { data: 'Grupo' }, { data: 'Proveedor' },
             { data: 'Stock', className: 'num', render: (d, t) => t==='display' ? `<span class="badge bg-${d>0?'success':(d<0?'danger':'dark')} px-3 py-2">${d.toLocaleString('en-US')}</span>` : d },
             { data: 'Costo', className: 'num', render: (d, t) => t==='display' ? `<strong>L ${d.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</strong>` : d }
@@ -247,14 +261,13 @@ function actualizarTablaSaldos(datosTabla) {
 }
 
 function actualizarTablaMovsResumen(datosTabla, prefix, configNum) {
-    // Destruimos la tabla primero para que no guarde el formato viejo (Solución al fallo de la "L")
-    if($.fn.DataTable.isDataTable('#tablaMovsResumen')) { 
-        $('#tablaMovsResumen').DataTable().destroy(); 
-    }
+    if($.fn.DataTable.isDataTable('#tablaMovsResumen')) { $('#tablaMovsResumen').DataTable().destroy(); }
     tableMovsResumen = $('#tablaMovsResumen').DataTable({
         data: datosTabla, pageLength: 10, language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json' }, order: [[0, 'asc']],
         columns: [
-            { data: 'Mes' }, { data: 'Departamento' },
+            { data: 'Mes' }, 
+            { data: 'Tipo', render: (d) => `<span class="badge bg-secondary">${d}</span>` },
+            { data: 'Departamento' },
             { data: 'Out25', className: 'num text-danger fw-bold', render: (d, t) => t==='display' ? (d!==0 ? prefix+Math.abs(d).toLocaleString('en-US', configNum) : '-') : Math.abs(d) },
             { data: 'Out26', className: 'num text-danger fw-bold', render: (d, t) => t==='display' ? (d!==0 ? prefix+Math.abs(d).toLocaleString('en-US', configNum) : '-') : Math.abs(d) },
             { data: 'In25', className: 'num text-success fw-bold', render: (d, t) => t==='display' ? (d!==0 ? prefix+d.toLocaleString('en-US', configNum) : '-') : d },
@@ -263,7 +276,6 @@ function actualizarTablaMovsResumen(datosTabla, prefix, configNum) {
     });
 }
 
-// 5.2 DRILL-DOWN: VISTA EXCLUSIVA
 function abrirDashboardDetalle(mes, depto) {
     $('#titulo-detalle').text(`DEPARTAMENTO: ${depto} | MES: ${mes}`);
     
@@ -289,15 +301,13 @@ function abrirDashboardDetalle(mes, depto) {
     $('#det-in-25').text(prefix + sumIn25.toLocaleString('en-US', configNum));
     $('#det-in-26').text(prefix + sumIn26.toLocaleString('en-US', configNum));
 
-    // Destruimos la tabla primero (Solución al fallo de la "L")
-    if($.fn.DataTable.isDataTable('#tablaMovsDetalle')) {
-        $('#tablaMovsDetalle').DataTable().destroy();
-    }
-    
+    if($.fn.DataTable.isDataTable('#tablaMovsDetalle')) { $('#tablaMovsDetalle').DataTable().destroy(); }
     tableMovsDetalle = $('#tablaMovsDetalle').DataTable({
-        data: dataDetalle, pageLength: 10, language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json' }, order: [[4, 'asc']],
+        data: dataDetalle, pageLength: 10, language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json' }, order: [[5, 'asc']],
         columns: [
-            { data: 'Mes' }, { data: 'Departamento' }, { data: 'Categoria' }, { data: 'Grupo' },
+            { data: 'Mes' }, 
+            { data: 'Tipo', render: (d) => `<span class="badge bg-secondary">${d}</span>` },
+            { data: 'Departamento' }, { data: 'Categoria' }, { data: 'Grupo' },
             { data: 'Out25', className: 'num text-danger', render: (d, t) => t==='display' ? (d!==0 ? prefix+Math.abs(d).toLocaleString('en-US', configNum) : '-') : Math.abs(d) },
             { data: 'Out26', className: 'num text-danger', render: (d, t) => t==='display' ? (d!==0 ? prefix+Math.abs(d).toLocaleString('en-US', configNum) : '-') : Math.abs(d) },
             { data: 'In25', className: 'num text-success', render: (d, t) => t==='display' ? (d!==0 ? prefix+d.toLocaleString('en-US', configNum) : '-') : d },
@@ -326,7 +336,6 @@ function abrirDashboardDetalle(mes, depto) {
     $('#dashboard-detalle').fadeIn();
 }
 
-// 6. GRÁFICOS PRINCIPALES
 function actualizarGraficos(gData) {
     Chart.defaults.font.family = "'Segoe UI', Arial, sans-serif";
     const { lineIn25, lineOut25, lineIn26, lineOut26, fFlujo, fYear, prefix, configNum } = gData;
