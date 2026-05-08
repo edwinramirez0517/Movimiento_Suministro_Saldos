@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -29,39 +30,44 @@
 
         .fixed-top-section { position: sticky; top: 0; z-index: 1050; background: white; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
         .header-top { background: var(--brand-blue); color: white; padding: 15px 25px; border-bottom: 5px solid var(--brand-red); }
+        .header-top h5 { font-size: 1.4rem; font-weight: 800; letter-spacing: 0.5px; margin: 0;}
         
         .filter-panel { padding: 12px 0; border-bottom: 1px solid #eaeaea; }
-        .select2-container--bootstrap-5 .select2-selection--multiple { min-height: 42px !important; max-height: 42px !important; overflow-y: auto !important; border-radius: 6px; border: 1px solid #ccc; }
+        .select2-container--bootstrap-5 .select2-selection--multiple { min-height: 42px !important; border-radius: 6px; }
         
         .main-content { padding: 20px 0 40px 0; }
 
-        .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 15px; padding: 0 20px; margin-bottom: 20px; }
-        .kpi-card { border-radius: 12px; padding: 22px 20px; color: white; position: relative; overflow: hidden; box-shadow: 0 6px 15px rgba(0,0,0,0.1); display: flex; flex-direction: column; justify-content: space-between; min-height: 140px; }
+        .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 15px; padding: 0 20px; margin-bottom: 20px; }
+        .kpi-card { border-radius: 12px; padding: 22px 20px; color: white; position: relative; overflow: hidden; box-shadow: 0 6px 15px rgba(0,0,0,0.1); display: flex; flex-direction: column; justify-content: space-between; min-height: 140px; transition: transform 0.2s; }
+        .kpi-card:hover { transform: translateY(-5px); }
+        
         .bg-blue { background: linear-gradient(135deg, #012094 0%, #0339ff 100%); }
         .bg-red { background: linear-gradient(135deg, #E1251B 0%, #ff5247 100%); }
         .bg-dark { background: linear-gradient(135deg, #2c3e50 0%, #4ca1af 100%); } 
         .bg-teal { background: linear-gradient(135deg, #0082c8 0%, #00b4db 100%); } 
         
         .kpi-icon { position: absolute; right: -15px; bottom: -15px; font-size: 6rem; opacity: 0.15; z-index: 0; }
-        .kpi-title { font-size: 0.9rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; z-index: 1; opacity: 0.9; margin-bottom: 5px;}
+        .kpi-title { font-size: 0.9rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; z-index: 1; opacity: 0.9; }
         .kpi-value { font-size: 2.1rem; font-weight: 900; margin: 0; z-index: 1; text-shadow: 1px 1px 3px rgba(0,0,0,0.2);}
         
         .section-card { background: white; border-radius: 12px; padding: 25px; box-shadow: 0 4px 12px rgba(0,0,0,0.06); margin-bottom: 25px;}
         .section-card h6 { font-size: 1.3rem; font-weight: 900 !important; letter-spacing: 0.5px; margin-bottom: 25px; color: var(--brand-blue); text-transform: uppercase;}
         
         .table-responsive { max-height: 600px; overflow-y: auto; position: relative; border-radius: 8px; border: 1px solid #ddd; }
-        thead th { position: sticky; top: -1px; background-color: var(--brand-blue) !important; color: white !important; z-index: 10; text-align: center; border-bottom: 3px solid var(--brand-red) !important; }
-        td.num { text-align: center !important; font-weight: 900 !important; font-size: 1.1rem !important; color: #111; }
+        thead th { position: sticky; top: -1px; background-color: var(--brand-blue) !important; color: white !important; z-index: 10; text-align: center; border-bottom: 3px solid var(--brand-red) !important; font-weight: 800; }
+        td.num { text-align: center !important; font-weight: 900 !important; font-size: 1rem !important; color: #111; }
         
         tbody tr { transition: background-color 0.2s ease; cursor: pointer; }
         tbody tr:hover td { background-color: rgba(1, 32, 148, 0.08) !important; }
-        #tablaMovsResumen tbody tr:hover td { background-color: rgba(225, 37, 27, 0.1) !important; }
 
         .nav-tabs { padding: 0 20px; border-bottom: 2px solid #ddd; }
         .nav-tabs .nav-link { font-weight: 800; color: #666; border: none; padding: 12px 25px; font-size: 0.95rem;}
         .nav-tabs .nav-link.active { color: var(--brand-blue); border-bottom: 4px solid var(--brand-blue); background: transparent; }
 
         .detalle-header { background-color: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.06); margin: 0 20px 20px 20px; display: flex; justify-content: space-between; align-items: center; border-left: 6px solid var(--brand-red);}
+        
+        /* Estilo para las etiquetas de tipo de ubicación (Tiendas, Hoteles, etc) */
+        .badge-tipo { font-weight: 800 !important; padding: 6px 12px !important; font-size: 0.75rem !important; text-transform: uppercase; border-radius: 4px; background-color: #343a40; color: white; display: inline-block; min-width: 110px; text-align: center;}
     </style>
 </head>
 <body>
@@ -79,7 +85,7 @@
                     <label class="fw-bold small text-secondary">Año</label>
                     <select id="f-year" class="form-select select2" multiple></select>
                 </div>
-                <div class="col-md-1">
+                <div class="col-md-2">
                     <label class="fw-bold small text-secondary">Mes</label>
                     <select id="f-mes" class="form-select select2" multiple></select>
                 </div>
@@ -99,26 +105,26 @@
                     <label class="fw-bold small text-secondary">Depto</label>
                     <select id="f-dep" class="form-select select2" multiple></select>
                 </div>
-                <div class="col-md-2">
+                <div class="col-md-1">
                     <label class="fw-bold small text-secondary">Métrica</label>
                     <select id="f-metric" class="form-select select2" data-minimum-results-for-search="Infinity">
-                        <option value="und" selected>Unidades Físicas</option>
-                        <option value="cst">Costo (Lempiras)</option>
+                        <option value="und" selected>UND</option>
+                        <option value="cst">LPS</option>
                     </select>
                 </div>
             </div>
             <div class="row mt-2 align-items-center">
                 <div class="col-md-3">
-                    <button class="btn btn-danger fw-bold shadow-sm" id="btn-reset-real"><i class="fa-solid fa-eraser me-1"></i> Borrar Filtros</button>
+                    <button class="btn btn-danger btn-sm fw-bold shadow-sm" id="btn-reset-real"><i class="fa-solid fa-eraser me-1"></i> Borrar Filtros</button>
                 </div>
                 <div class="col-md-6 text-center">
                      <div class="btn-group shadow-sm" role="group">
                         <input type="radio" class="btn-check" name="btnFlujo" id="btnFlujoAmbos" value="all" checked>
-                        <label class="btn btn-outline-primary fw-bold" for="btnFlujoAmbos" style="width: 200px;"><i class="fa-solid fa-scale-balanced me-1"></i> Balance Total</label>
+                        <label class="btn btn-outline-primary fw-bold" for="btnFlujoAmbos" style="width: 150px;">Balance Total</label>
                         <input type="radio" class="btn-check" name="btnFlujo" id="btnFlujoIn" value="in">
-                        <label class="btn btn-outline-success fw-bold" for="btnFlujoIn" style="width: 200px;"><i class="fa-solid fa-arrow-down me-1"></i> Solo Entradas</label>
+                        <label class="btn btn-outline-success fw-bold" for="btnFlujoIn" style="width: 150px;">Solo Entradas</label>
                         <input type="radio" class="btn-check" name="btnFlujo" id="btnFlujoOut" value="out">
-                        <label class="btn btn-outline-danger fw-bold" for="btnFlujoOut" style="width: 200px;"><i class="fa-solid fa-arrow-up me-1"></i> Solo Salidas</label>
+                        <label class="btn btn-outline-danger fw-bold" for="btnFlujoOut" style="width: 150px;">Solo Salidas</label>
                     </div>
                 </div>
             </div>
@@ -153,7 +159,7 @@
 
                 <div class="tab-pane fade" id="tab-m">
                     <div class="section-card" style="padding-bottom: 0;">
-                        <h6 class="text-center mb-3 text-secondary"><i class="fa-solid fa-hand-pointer me-2"></i>Haz Clic en Cualquier Fila para Inmersión Detallada</h6>
+                        <h6 class="text-center mb-3 text-secondary">Haga clic en una fila para ver el detalle por grupo</h6>
                         <table id="tablaMovsResumen" class="table table-striped table-bordered w-100">
                             <thead><tr><th>Mes</th><th>Tipo</th><th>Departamento</th><th class="text-danger">Salidas 2025</th><th class="text-danger">Salidas 2026</th><th class="text-success">Entradas 2025</th><th class="text-success">Entradas 2026</th></tr></thead>
                             <tbody></tbody>
@@ -164,7 +170,7 @@
                 <div class="tab-pane fade" id="tab-t">
                     <div class="section-card" style="padding-bottom: 0;">
                         <table id="tablaDetalle" class="table table-striped table-bordered w-100">
-                            <thead><tr><th>Tipo</th><th>División</th><th>Categoría</th><th>Grupo</th><th>Proveedor</th><th>Stock Físico</th><th>Costo Contable</th></tr></thead>
+                            <thead><tr><th>División</th><th>Categoría</th><th>Grupo</th><th>Proveedor</th><th>Stock Físico</th><th>Costo Contable</th></tr></thead>
                             <tbody></tbody>
                         </table>
                     </div>
@@ -175,39 +181,27 @@
         <div id="dashboard-detalle" style="display:none;">
             <div class="detalle-header">
                 <h4 id="titulo-detalle" class="m-0 fw-bold" style="color:var(--brand-blue)">Detalle de Departamento</h4>
-                <button id="btn-volver-resumen" class="btn btn-dark fw-bold shadow px-4 py-2"><i class="fa-solid fa-arrow-left me-2"></i> Cerrar Panel de Detalle</button>
+                <button id="btn-volver-resumen" class="btn btn-dark fw-bold shadow px-4 py-2"><i class="fa-solid fa-arrow-left me-2"></i> Volver al Resumen</button>
             </div>
-
             <div class="kpi-grid">
                 <div class="kpi-card bg-red"><div class="kpi-title">Salidas 2025</div><div class="kpi-value" id="det-out-25">0</div></div>
-                <div class="kpi-card bg-red" style="opacity: 0.85"><div class="kpi-title">Salidas 2026</div><div class="kpi-value" id="det-out-26">0</div></div>
+                <div class="kpi-card bg-red" style="opacity:0.8"><div class="kpi-title">Salidas 2026</div><div class="kpi-value" id="det-out-26">0</div></div>
                 <div class="kpi-card bg-teal"><div class="kpi-title">Entradas 2025</div><div class="kpi-value" id="det-in-25">0</div></div>
-                <div class="kpi-card bg-teal" style="opacity: 0.85"><div class="kpi-title">Entradas 2026</div><div class="kpi-value" id="det-in-26">0</div></div>
+                <div class="kpi-card bg-teal" style="opacity:0.8"><div class="kpi-title">Entradas 2026</div><div class="kpi-value" id="det-in-26">0</div></div>
             </div>
-
             <div class="row px-4">
-                <div class="col-md-5 mb-4">
-                    <div class="section-card h-100">
-                        <h6 class="text-center"><i class="fa-solid fa-ranking-star me-2"></i>Top 10 Grupos Afectados (Salidas)</h6>
-                        <hr class="mt-0 mb-4" style="opacity: 0.1;">
-                        <div style="height:450px;"><canvas id="c-detalle-grupo"></canvas></div>
-                    </div>
-                </div>
+                <div class="col-md-5 mb-4"><div class="section-card h-100"><h6>Top 10 Grupos Afectados</h6><div style="height:450px;"><canvas id="c-detalle-grupo"></canvas></div></div></div>
                 <div class="col-md-7 mb-4">
                     <div class="section-card h-100" style="padding-bottom: 0;">
-                        <h6 class="text-center"><i class="fa-solid fa-table me-2"></i>Desglose a Nivel Grupo</h6>
-                        <hr class="mt-0 mb-4" style="opacity: 0.1;">
-                        <div class="table-responsive">
-                            <table id="tablaMovsDetalle" class="table table-striped table-bordered w-100">
-                                <thead><tr><th>Mes</th><th>Tipo</th><th>Depto</th><th>Categoría</th><th>Grupo</th><th class="text-danger">Sal. 25</th><th class="text-danger">Sal. 26</th><th class="text-success">Ent. 25</th><th class="text-success">Ent. 26</th></tr></thead>
-                                <tbody></tbody>
-                            </table>
-                        </div>
+                        <h6>Desglose por Grupo</h6>
+                        <table id="tablaMovsDetalle" class="table table-striped table-bordered w-100">
+                            <thead><tr><th>Mes</th><th>Tipo</th><th>Depto</th><th>Categoría</th><th>Grupo</th><th class="text-danger">Sal. 25</th><th class="text-danger">Sal. 26</th><th class="text-success">Ent. 25</th><th class="text-success">Ent. 26</th></tr></thead>
+                            <tbody></tbody>
+                        </table>
                     </div>
                 </div>
             </div>
         </div>
-
     </div>
     <script src="app.js"></script>
 </body>
