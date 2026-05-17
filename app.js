@@ -632,21 +632,22 @@ function abrirDashboardDetalle(depto) {
         options: {
             responsive: true, 
             maintainAspectRatio: false, 
+            indexAxis: 'y', 
             layout: { 
-                padding: { top: 30 } 
+                padding: { right: 30 } 
             },
             scales: { 
-                x: { 
+                x: { display: false }, 
+                y: { 
                     grid: { display: false }, 
                     ticks: { color: '#000', font: { weight: 'bold', size: 10 } } 
-                }, 
-                y: { display: false } 
+                } 
             },
             plugins: { 
                 legend: { display: false }, 
                 datalabels: { 
                     anchor: 'end', 
-                    align: 'top', 
+                    align: 'right', 
                     color: '#000', 
                     font: { weight: 'bold' }, 
                     formatter: v => v > 0 ? px + v.toLocaleString('en-US', cf) : '' 
@@ -677,8 +678,8 @@ function abrirDashboardDetalle(depto) {
     // Dibujar tendencia inicial (General del Departamento)
     dibujarTendencia(depto, null, null);
 
-    // Quitamos la línea que ocultaba los filtros para que siempre estén fijos en pantalla
-    $('#dashboard-principal').hide();
+    // Mantenemos visible todo (No ocultamos el dashboard principal para que los filtros funcionen y sean visibles)
+    $('#dashboard-principal .kpi-grid, #dashboard-principal .nav-tabs, #dashboard-principal .tab-content').hide();
     $('#dashboard-detalle').fadeIn();
 }
 
