@@ -59,6 +59,7 @@
         .section-card { background: white; border-radius: 12px; padding: 25px; box-shadow: 0 4px 12px rgba(0,0,0,0.06); margin-bottom: 25px;}
         .section-card h6 { font-size: 1.3rem; font-weight: 900 !important; letter-spacing: 0.5px; margin-bottom: 25px; color: var(--brand-blue); text-transform: uppercase;}
         
+        /* Contenedor de tabla con scroll interno para Sticky Headers */
         .table-responsive { max-height: 65vh; overflow-y: auto; position: relative; border-radius: 8px; border: 1px solid #ddd; }
         
         /* ENCABEZADOS FIJOS (STICKY HEADERS) */
@@ -80,6 +81,9 @@
         tbody tr { transition: background-color 0.2s ease; cursor: pointer; }
         tbody tr:hover td { background-color: rgba(1, 32, 148, 0.08) !important; }
         #tablaMovsResumen tbody tr:hover td { background-color: rgba(225, 37, 27, 0.1) !important; }
+        
+        /* Fila seleccionada en la tabla de detalle */
+        .table-primary td { background-color: rgba(1, 32, 148, 0.15) !important; border-bottom: 2px solid var(--brand-blue) !important; }
 
         .nav-tabs { padding: 0 20px; border-bottom: 2px solid #ddd; }
         .nav-tabs .nav-link { font-weight: 800; color: #666; border: none; padding: 12px 25px; font-size: 0.95rem;}
@@ -238,21 +242,21 @@
             <div class="row px-4">
                 <div class="col-12 mb-4">
                     <div class="section-card h-100">
-                        <h6 class="text-center"><i class="fa-solid fa-chart-line me-2"></i>Tendencia Mensual del Departamento (Ignora el filtro global de Mes para poder comparar)</h6>
-                        <div style="height:250px;"><canvas id="c-detalle-tendencia"></canvas></div>
+                        <h6 class="text-center"><i class="fa-solid fa-ranking-star me-2"></i>Top 10 Grupos Afectados (Filtros Globales Aplicados)</h6>
+                        <div style="height:350px;"><canvas id="c-detalle-grupo"></canvas></div>
                     </div>
                 </div>
 
-                <div class="col-md-4 mb-4">
+                <div class="col-12 mb-4">
                     <div class="section-card h-100">
-                        <h6 class="text-center"><i class="fa-solid fa-ranking-star me-2"></i>Top 10 Grupos Afectados</h6>
-                        <div style="height:450px;"><canvas id="c-detalle-grupo"></canvas></div>
+                        <h6 class="text-center" id="titulo-tendencia"><i class="fa-solid fa-chart-line me-2"></i>Tendencia Mensual</h6>
+                        <div style="height:300px;"><canvas id="c-detalle-tendencia"></canvas></div>
                     </div>
                 </div>
                 
-                <div class="col-md-8 mb-4">
+                <div class="col-12 mb-4">
                     <div class="section-card h-100" style="padding-bottom: 0;">
-                        <h6 class="text-center"><i class="fa-solid fa-table me-2"></i>Tabla Consolidada por SKU (Aplica todos los filtros de la pantalla principal)</h6>
+                        <h6 class="text-center"><i class="fa-solid fa-table me-2"></i>Tabla Consolidada por SKU (Haz clic en una fila para ver su tendencia mensual)</h6>
                         <div class="table-responsive">
                             <table id="tablaMovsDetalle" class="table table-striped table-bordered w-100">
                                 <thead>
