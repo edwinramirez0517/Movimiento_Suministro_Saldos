@@ -57,7 +57,7 @@ function normalizeRow(row) {
     return normalized;
 }
 
-// Inicialización con Protección de Errores y Forzado de Punto y Coma (;)
+// Inicialización
 $(document).ready(function () {
     $('.select2').select2({ theme: 'bootstrap-5', placeholder: "Todos...", allowClear: true });
     $('#fecha-hoy').text(new Date().toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' }));
@@ -154,7 +154,7 @@ function bindEventosFiltros() {
     $('input[name="btnFlujo"]').on('change', aplicarFiltrosYRenderizar);
 }
 
-// 1. INVENTARIO MAESTRO (Independiente y Blindado)
+// 1. INVENTARIO MAESTRO
 function renderizarSaldosFijos() {
     let totalCosto = 0;
     let totalStock = 0;
@@ -172,6 +172,8 @@ function renderizarSaldosFijos() {
             Categoria: reglas.cleanName(row['CATEGORIA']),
             Grupo: reglas.cleanName(row['GRUPO']),
             Proveedor: reglas.cleanName(row['PROVEEDOR']),
+            SKU: row['PRODUCTO'] || "N/A", // NUEVO CAMPO
+            Descripcion: row['PRODNOMBRE'] || "SIN DESCRIPCIÓN", // NUEVO CAMPO
             Stock: stock,
             Costo: costo
         });
@@ -188,12 +190,14 @@ function renderizarSaldosFijos() {
         data: saldosTabla,
         pageLength: 15,
         language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json' },
-        order: [[4, 'desc']], // Ordenar por Stock por defecto
+        order: [[6, 'desc']], // Ajustado a la nueva columna de stock
         columns: [
             { data: 'Division' },
             { data: 'Categoria' },
             { data: 'Grupo' },
             { data: 'Proveedor' },
+            { data: 'SKU' }, // NUEVA COLUMNA
+            { data: 'Descripcion' }, // NUEVA COLUMNA
             { 
                 data: 'Stock', 
                 className: 'num', 
@@ -289,7 +293,6 @@ function aplicarFiltrosYRenderizar() {
             }
         });
 
-        // Poblar la data detallada si existió movimiento
         if(out25 !== 0 || out26 !== 0 || in25 !== 0 || in26 !== 0) {
             filteredMovsData.push({
                 Mes: mesStr,
@@ -297,6 +300,8 @@ function aplicarFiltrosYRenderizar() {
                 Departamento: depto,
                 Categoria: cat,
                 Grupo: grp,
+                SKU: row['ITEM NO_'] || "N/A", // NUEVO CAMPO
+                Descripcion: row['DESCRIPCION'] || "SIN DESCRIPCIÓN", // NUEVO CAMPO
                 Out25: out25,
                 Out26: out26,
                 In25: in25,
@@ -439,13 +444,15 @@ function abrirDashboardDetalle(mes, depto) {
         data: dataDetalle,
         pageLength: 10,
         language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json' },
-        order: [[5, 'asc']],
+        order: [[7, 'asc']], // Ajustado a la nueva posición de columnas
         columns: [
             { data: 'Mes' },
             { data: 'Tipo', render: d => `<span class="badge-tipo">${d}</span>` },
             { data: 'Departamento' },
             { data: 'Categoria' },
             { data: 'Grupo' },
+            { data: 'SKU' }, // NUEVA COLUMNA
+            { data: 'Descripcion' }, // NUEVA COLUMNA
             { data: 'Out25', className: 'num text-danger fw-bold', render: (d, t) => t==='display' ? (d!==0 ? px + Math.abs(d).toLocaleString('en-US', cf) : '-') : Math.abs(d) },
             { data: 'Out26', className: 'num text-danger fw-bold', render: (d, t) => t==='display' ? (d!==0 ? px + Math.abs(d).toLocaleString('en-US', cf) : '-') : Math.abs(d) },
             { data: 'In25', className: 'num text-success fw-bold', render: (d, t) => t==='display' ? (d!==0 ? px + d.toLocaleString('en-US', cf) : '-') : d },
