@@ -57,7 +57,7 @@ function normalizeRow(row) {
     return normalized;
 }
 
-// Inicialización con Protección de Errores y Forzado de Punto y Coma (;)
+// Inicialización con Protección de Errores
 $(document).ready(function () {
     $('.select2').select2({ theme: 'bootstrap-5', placeholder: "Todos...", allowClear: true });
     $('#fecha-hoy').text(new Date().toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' }));
@@ -95,19 +95,20 @@ $(document).ready(function () {
         $('#f-metric').val('und').trigger('change.select2'); 
     });
 
-    // Abrir Panel de Detalle al hacer clic en la tabla de Resumen
+    // Abrir Panel de Detalle al hacer clic en la tabla de Resumen (Pasa el Depto)
     $('#tablaMovsResumen tbody').on('click', 'tr', function () {
         if(!tableMovsResumen) return;
         let data = tableMovsResumen.row(this).data();
         if(data) {
-            abrirDashboardDetalle(data.Mes, data.Departamento);
+            abrirDashboardDetalle(data.Departamento);
         }
     });
 
     // Botón para volver
     $('#btn-volver-resumen').click(function() {
         $('#dashboard-detalle').hide();
-        $('#main-filters').slideDown();
+        // Los filtros SIEMPRE estuvieron visibles, no se ocultan, pero por si acaso:
+        $('#main-filters').show(); 
         $('#dashboard-principal').fadeIn();
     });
 });
@@ -227,6 +228,7 @@ function renderizarSaldosFijos() {
 
 // 2. MOTOR DE MOVIMIENTOS
 function aplicarFiltrosYRenderizar() {
+    // ESTOS SON LOS FILTROS GLOBALES. TODO EL CÓDIGO OBEDECE ESTO.
     const fYear = $('#f-year').val() || [];
     const fMes = $('#f-mes').val() || [];
     const fTipo = $('#f-tipo').val() || [];
@@ -248,6 +250,7 @@ function aplicarFiltrosYRenderizar() {
     let lineIn26 = Array(12).fill(0);
     let lineOut26 = Array(12).fill(0);
     
+    // filteredMovsData guardará ÚNICAMENTE lo que cumpla con los filtros globales
     filteredMovsData = []; 
     let resumenMap = {}; 
     const metricKey = fMetric === 'und' ? 'UNIDAD' : 'COSTO';
@@ -260,6 +263,7 @@ function aplicarFiltrosYRenderizar() {
         let depto = reglas.cleanName(row['DEPARTAMENTO2']);
         let grp = reglas.cleanName(row['GRUPO']);
 
+        // Si la fila no cumple con el filtro global, la descartamos de inmediato
         if (fMes.length && !fMes.includes(mesStr)) return;
         if (fTipo.length && !fTipo.includes(tipo)) return;
         if (fCat.length && !fCat.includes(cat)) return;
@@ -307,8 +311,8 @@ function aplicarFiltrosYRenderizar() {
         });
 
         if(out25 !== 0 || out26 !== 0 || in25 !== 0 || in26 !== 0) {
+            // Guardamos el detalle que SÍ pasó los filtros
             filteredMovsData.push({
-                Mes: mesStr,
                 Tipo: tipo,
                 Departamento: depto,
                 Categoria: cat,
@@ -321,9 +325,10 @@ function aplicarFiltrosYRenderizar() {
                 In26: in26
             });
             
-            let keyResumen = mesStr + '|' + depto;
+            // Agrupamos la tabla de resumen SOLO por Departamento (Quitamos Mes)
+            let keyResumen = depto;
             if(!resumenMap[keyResumen]) {
-                resumenMap[keyResumen] = { Mes: mesStr, Tipo: tipo, Departamento: depto, Out25: 0, Out26: 0, In25: 0, In26: 0 };
+                resumenMap[keyResumen] = { Tipo: tipo, Departamento: depto, Out25: 0, Out26: 0, In25: 0, In26: 0 };
             }
             resumenMap[keyResumen].Out25 += out25;
             resumenMap[keyResumen].Out26 += out26;
@@ -374,7 +379,7 @@ function aplicarFiltrosYRenderizar() {
     });
 }
 
-// 3. TABLA DE RESUMEN
+// 3. TABLA DE RESUMEN (Sin columna Mes)
 function actualizarTablaMovsResumen(datos, px, cf) {
     if($.fn.DataTable.isDataTable('#tablaMovsResumen')) {
         $('#tablaMovsResumen').DataTable().destroy();
@@ -382,11 +387,10 @@ function actualizarTablaMovsResumen(datos, px, cf) {
     
     tableMovsResumen = $('#tablaMovsResumen').DataTable({
         data: datos,
-        pageLength: 10,
+        pageLength: 15,
         language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json' },
-        order: [[0, 'asc']],
+        order: [[1, 'asc']], // Ordena por nombre del departamento
         columns: [
-            { data: 'Mes' },
             { 
                 data: 'Tipo', 
                 render: d => `<span class="badge-tipo">${d}</span>` 
@@ -416,9 +420,9 @@ function actualizarTablaMovsResumen(datos, px, cf) {
     });
 }
 
-// 4. TABLA DE DETALLE CONSOLIDADO (AGRUPADO POR SKU)
-function abrirDashboardDetalle(mes, depto) {
-    $('#titulo-detalle').text(`${depto} | ${mes}`);
+// 4. TABLA DE DETALLE CONSOLIDADO (RESPETA LOS FILTROS GLOBALES)
+function abrirDashboardDetalle(depto) {
+    $('#titulo-detalle').text(`Detalle de ${depto} (Datos filtrados en panel superior)`);
     
     let px = $('#f-metric').val() === 'cst' ? 'L ' : '';
     let cf = {
@@ -430,9 +434,9 @@ function abrirDashboardDetalle(mes, depto) {
     let rankGrupo = {};
     let mapaArticulos = {};
 
+    // Iteramos sobre filteredMovsData que YA ESTÁ filtrado por Año, Mes, Tienda, etc.
     filteredMovsData.forEach(d => {
-        // Se filtra por el departamento y mes seleccionado en el resumen
-        if(d.Mes !== mes || d.Departamento !== depto) return;
+        if(d.Departamento !== depto) return; // Solo procesamos el Depto que hizo clic
         
         sumOut25 += d.Out25;
         sumOut26 += d.Out26;
@@ -492,6 +496,7 @@ function abrirDashboardDetalle(mes, depto) {
     
     let sortedDG = Object.entries(rankGrupo).sort((a,b) => b[1] - a[1]).slice(0, 10);
     
+    // Gráfico de Barras A LO LARGO (Verticales extendidas en todo el contenedor)
     charts.cDetGrp = new Chart(document.getElementById('c-detalle-grupo'), {
         type: 'bar',
         data: {
@@ -505,17 +510,17 @@ function abrirDashboardDetalle(mes, depto) {
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            indexAxis: 'y',
-            layout: { padding: { right: 30 } }, // PADDING REDUCIDO
+            // Quitamos indexAxis: 'y' para que las barras sean verticales a lo largo
+            layout: { padding: { top: 30 } }, 
             scales: {
-                x: { display: false },
-                y: { grid: { display: false }, ticks: { color: '#000', font: { weight: 'bold', size: 10 } } }
+                x: { grid: { display: false }, ticks: { color: '#000', font: { weight: 'bold', size: 10 } } },
+                y: { display: false }
             },
             plugins: {
                 legend: { display: false },
                 datalabels: {
                     anchor: 'end',
-                    align: 'right',
+                    align: 'top',
                     color: '#000',
                     font: { weight: 'bold' },
                     formatter: v => v > 0 ? px + v.toLocaleString('en-US', cf) : ''
@@ -638,7 +643,7 @@ function actualizarGraficos(g) {
                 responsive: true,
                 maintainAspectRatio: false,
                 indexAxis: 'y',
-                layout: { padding: { right: 40 } }, // PADDING REDUCIDO
+                layout: { padding: { right: 40 } }, 
                 scales: {
                     x: { display: false },
                     y: { grid: { display: false }, ticks: { color: '#000', font: { weight: 'bold' } } }
