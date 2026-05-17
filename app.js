@@ -12,8 +12,8 @@ const MESES_ORDEN = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JUL
 // Reglas de Negocio y Clasificación
 const reglas = {
     cleanNumber: (val) => {
-        if (!val || val === '') return 0;
-        if (typeof val === 'number') return val;
+        if (val === null || val === undefined || val === '') return 0;
+        if (typeof val === 'number') return isNaN(val) ? 0 : val;
         const strNum = val.toString().replace(/[L$,\s]/gi, '').trim();
         const num = parseFloat(strNum);
         return isNaN(num) ? 0 : num;
@@ -57,7 +57,7 @@ function normalizeRow(row) {
     return normalized;
 }
 
-// Inicialización
+// Inicialización con Protección de Errores y Forzado de Punto y Coma (;)
 $(document).ready(function () {
     $('.select2').select2({ theme: 'bootstrap-5', placeholder: "Todos...", allowClear: true });
     $('#fecha-hoy').text(new Date().toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' }));
@@ -154,15 +154,19 @@ function bindEventosFiltros() {
     $('input[name="btnFlujo"]').on('change', aplicarFiltrosYRenderizar);
 }
 
-// 1. INVENTARIO MAESTRO
+// 1. INVENTARIO MAESTRO (Independiente y Blindado)
 function renderizarSaldosFijos() {
     let totalCosto = 0;
     let totalStock = 0;
     let saldosTabla = [];
     
     rawSaldos.forEach(row => {
-        let stock = reglas.cleanNumber(row['SALDOUNDTOTAL']);
-        let costo = reglas.cleanNumber(row['TOTAL COSTO UND.']);
+        // Validación de nombres de columna para prevenir variables vacías
+        let stockVal = row['SALDOUNDTOTAL'] || row['SALDO UND TOTAL'] || 0;
+        let costoVal = row['TOTAL COSTO UND.'] || row['TOTAL COSTO'] || 0;
+
+        let stock = reglas.cleanNumber(stockVal);
+        let costo = reglas.cleanNumber(costoVal);
         
         totalStock += stock;
         totalCosto += costo;
@@ -172,15 +176,16 @@ function renderizarSaldosFijos() {
             Categoria: reglas.cleanName(row['CATEGORIA']),
             Grupo: reglas.cleanName(row['GRUPO']),
             Proveedor: reglas.cleanName(row['PROVEEDOR']),
-            SKU: row['PRODUCTO'] || "N/A", // NUEVO CAMPO
-            Descripcion: row['PRODNOMBRE'] || "SIN DESCRIPCIÓN", // NUEVO CAMPO
-            Stock: stock,
-            Costo: costo
+            SKU: row['PRODUCTO'] || row['ITEM NO_'] || "N/A", 
+            Descripcion: row['PRODNOMBRE'] || row['DESCRIPCION'] || "SIN DESCRIPCIÓN", 
+            Stock: isNaN(stock) ? 0 : stock,
+            Costo: isNaN(costo) ? 0 : costo
         });
     });
 
-    $('#k-cost').text('L ' + totalCosto.toLocaleString('en-US', {minimumFractionDigits: 2}));
-    $('#k-stock').text(totalStock.toLocaleString('en-US'));
+    // Forzando visualmente a 2 decimales para la uniformidad
+    $('#k-cost').text('L ' + totalCosto.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
+    $('#k-stock').text(totalStock.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
 
     if($.fn.DataTable.isDataTable('#tablaDetalle')) {
         $('#tablaDetalle').DataTable().destroy();
@@ -190,23 +195,23 @@ function renderizarSaldosFijos() {
         data: saldosTabla,
         pageLength: 15,
         language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json' },
-        order: [[6, 'desc']], // Ajustado a la nueva columna de stock
+        order: [[6, 'desc']], // Ordenar por Stock (que ahora es la columna 6)
         columns: [
             { data: 'Division' },
             { data: 'Categoria' },
             { data: 'Grupo' },
             { data: 'Proveedor' },
-            { data: 'SKU' }, // NUEVA COLUMNA
-            { data: 'Descripcion' }, // NUEVA COLUMNA
+            { data: 'SKU' },
+            { data: 'Descripcion' },
             { 
                 data: 'Stock', 
                 className: 'num', 
-                render: (d, t) => t==='display' ? `<span class="badge bg-${d>0?'success':(d<0?'danger':'dark')} px-3 py-2">${d.toLocaleString('en-US')}</span>` : d 
+                render: (d, t) => t==='display' ? `<span class="badge bg-${d>0?'success':(d<0?'danger':'dark')} px-3 py-2">${parseFloat(d||0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>` : d 
             },
             { 
                 data: 'Costo', 
                 className: 'num', 
-                render: (d, t) => t==='display' ? `<strong>L ${d.toLocaleString('en-US', {minimumFractionDigits:2})}</strong>` : d 
+                render: (d, t) => t==='display' ? `<strong>L ${parseFloat(d||0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</strong>` : d 
             }
         ]
     });
@@ -293,6 +298,7 @@ function aplicarFiltrosYRenderizar() {
             }
         });
 
+        // Poblar la data detallada si existió movimiento
         if(out25 !== 0 || out26 !== 0 || in25 !== 0 || in26 !== 0) {
             filteredMovsData.push({
                 Mes: mesStr,
@@ -300,8 +306,8 @@ function aplicarFiltrosYRenderizar() {
                 Departamento: depto,
                 Categoria: cat,
                 Grupo: grp,
-                SKU: row['ITEM NO_'] || "N/A", // NUEVO CAMPO
-                Descripcion: row['DESCRIPCION'] || "SIN DESCRIPCIÓN", // NUEVO CAMPO
+                SKU: row['ITEM NO_'] || row['PRODUCTO'] || "N/A", 
+                Descripcion: row['DESCRIPCION'] || row['PRODNOMBRE'] || "SIN DESCRIPCIÓN",
                 Out25: out25,
                 Out26: out26,
                 In25: in25,
@@ -330,8 +336,8 @@ function aplicarFiltrosYRenderizar() {
 
     let prefix = fMetric === 'cst' ? 'L ' : '';
     let configNum = {
-        minimumFractionDigits: (fMetric === 'cst' ? 2 : 0), 
-        maximumFractionDigits: (fMetric === 'cst' ? 2 : 0)
+        minimumFractionDigits: 2, 
+        maximumFractionDigits: 2
     };
 
     $('#k-pos').text(prefix + Math.abs(totalPos).toLocaleString('en-US', configNum));
@@ -409,8 +415,8 @@ function abrirDashboardDetalle(mes, depto) {
     
     let px = $('#f-metric').val() === 'cst' ? 'L ' : '';
     let cf = {
-        minimumFractionDigits: ($('#f-metric').val() === 'cst' ? 2 : 0), 
-        maximumFractionDigits: ($('#f-metric').val() === 'cst' ? 2 : 0)
+        minimumFractionDigits: 2, 
+        maximumFractionDigits: 2
     };
     
     let dataDetalle = [];
@@ -444,15 +450,15 @@ function abrirDashboardDetalle(mes, depto) {
         data: dataDetalle,
         pageLength: 10,
         language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json' },
-        order: [[7, 'asc']], // Ajustado a la nueva posición de columnas
+        order: [[7, 'asc']], // Ajustado para ordenar ahora por Sal. 25
         columns: [
             { data: 'Mes' },
             { data: 'Tipo', render: d => `<span class="badge-tipo">${d}</span>` },
             { data: 'Departamento' },
             { data: 'Categoria' },
             { data: 'Grupo' },
-            { data: 'SKU' }, // NUEVA COLUMNA
-            { data: 'Descripcion' }, // NUEVA COLUMNA
+            { data: 'SKU' },
+            { data: 'Descripcion' },
             { data: 'Out25', className: 'num text-danger fw-bold', render: (d, t) => t==='display' ? (d!==0 ? px + Math.abs(d).toLocaleString('en-US', cf) : '-') : Math.abs(d) },
             { data: 'Out26', className: 'num text-danger fw-bold', render: (d, t) => t==='display' ? (d!==0 ? px + Math.abs(d).toLocaleString('en-US', cf) : '-') : Math.abs(d) },
             { data: 'In25', className: 'num text-success fw-bold', render: (d, t) => t==='display' ? (d!==0 ? px + d.toLocaleString('en-US', cf) : '-') : d },
