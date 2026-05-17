@@ -154,14 +154,13 @@ function bindEventosFiltros() {
     $('input[name="btnFlujo"]').on('change', aplicarFiltrosYRenderizar);
 }
 
-// 1. INVENTARIO MAESTRO (Independiente y Blindado)
+// 1. INVENTARIO MAESTRO (Independiente, Blindado y Exportable a Excel)
 function renderizarSaldosFijos() {
     let totalCosto = 0;
     let totalStock = 0;
     let saldosTabla = [];
     
     rawSaldos.forEach(row => {
-        // Validación de nombres de columna para prevenir variables vacías
         let stockVal = row['SALDOUNDTOTAL'] || row['SALDO UND TOTAL'] || 0;
         let costoVal = row['TOTAL COSTO UND.'] || row['TOTAL COSTO'] || 0;
 
@@ -183,7 +182,6 @@ function renderizarSaldosFijos() {
         });
     });
 
-    // Forzando visualmente a 2 decimales para la uniformidad
     $('#k-cost').text('L ' + totalCosto.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
     $('#k-stock').text(totalStock.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}));
 
@@ -191,11 +189,21 @@ function renderizarSaldosFijos() {
         $('#tablaDetalle').DataTable().destroy();
     }
     
+    // Configuración con Botón de Excel integrado
     tableDetalle = $('#tablaDetalle').DataTable({
         data: saldosTabla,
         pageLength: 15,
         language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json' },
-        order: [[6, 'desc']], // Ordenar por Stock (que ahora es la columna 6)
+        order: [[6, 'desc']], 
+        dom: '<"row mb-3"<"col-sm-12 col-md-6"B><"col-sm-12 col-md-6"f>>rt<"row mt-3"<"col-sm-12 col-md-5"i><"col-sm-12 col-md-7"p>>',
+        buttons: [
+            {
+                extend: 'excelHtml5',
+                text: '<i class="fa-solid fa-file-excel me-1"></i> Exportar a Excel',
+                className: 'btn btn-success fw-bold shadow-sm',
+                title: 'Auditoria_Saldos_ElCompadre'
+            }
+        ],
         columns: [
             { data: 'Division' },
             { data: 'Categoria' },
@@ -298,7 +306,6 @@ function aplicarFiltrosYRenderizar() {
             }
         });
 
-        // Poblar la data detallada si existió movimiento
         if(out25 !== 0 || out26 !== 0 || in25 !== 0 || in26 !== 0) {
             filteredMovsData.push({
                 Mes: mesStr,
@@ -409,7 +416,7 @@ function actualizarTablaMovsResumen(datos, px, cf) {
     });
 }
 
-// 4. TABLA DE DETALLE (AL HACER CLIC)
+// 4. TABLA DE DETALLE CONSOLIDADO (AGRUPADO POR SKU)
 function abrirDashboardDetalle(mes, depto) {
     $('#titulo-detalle').text(`${depto} | ${mes}`);
     
@@ -419,11 +426,12 @@ function abrirDashboardDetalle(mes, depto) {
         maximumFractionDigits: 2
     };
     
-    let dataDetalle = [];
     let sumOut25 = 0, sumOut26 = 0, sumIn25 = 0, sumIn26 = 0;
     let rankGrupo = {};
+    let mapaArticulos = {};
 
     filteredMovsData.forEach(d => {
+        // Se filtra por el departamento y mes seleccionado en el resumen
         if(d.Mes !== mes || d.Departamento !== depto) return;
         
         sumOut25 += d.Out25;
@@ -434,8 +442,24 @@ function abrirDashboardDetalle(mes, depto) {
         let rGValue = Math.abs(d.Out25) + Math.abs(d.Out26);
         rankGrupo[d.Grupo] = (rankGrupo[d.Grupo] || 0) + rGValue;
         
-        dataDetalle.push(d);
+        // Agrupación directa por SKU (Consolidación)
+        if (!mapaArticulos[d.SKU]) {
+            mapaArticulos[d.SKU] = {
+                Depto: d.Departamento,
+                Categoria: d.Categoria,
+                Grupo: d.Grupo,
+                SKU: d.SKU,
+                Descripcion: d.Descripcion,
+                Out25: 0, Out26: 0, In25: 0, In26: 0
+            };
+        }
+        mapaArticulos[d.SKU].Out25 += d.Out25;
+        mapaArticulos[d.SKU].Out26 += d.Out26;
+        mapaArticulos[d.SKU].In25 += d.In25;
+        mapaArticulos[d.SKU].In26 += d.In26;
     });
+
+    let dataDetalle = Object.values(mapaArticulos);
 
     $('#det-out-25').text(px + Math.abs(sumOut25).toLocaleString('en-US', cf));
     $('#det-out-26').text(px + Math.abs(sumOut26).toLocaleString('en-US', cf));
@@ -450,11 +474,9 @@ function abrirDashboardDetalle(mes, depto) {
         data: dataDetalle,
         pageLength: 10,
         language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json' },
-        order: [[7, 'asc']], // Ajustado para ordenar ahora por Sal. 25
+        order: [[5, 'desc']], // Se ajusta el índice para ordenar por Sal. 25
         columns: [
-            { data: 'Mes' },
-            { data: 'Tipo', render: d => `<span class="badge-tipo">${d}</span>` },
-            { data: 'Departamento' },
+            { data: 'Depto' },
             { data: 'Categoria' },
             { data: 'Grupo' },
             { data: 'SKU' },
@@ -484,7 +506,7 @@ function abrirDashboardDetalle(mes, depto) {
             responsive: true,
             maintainAspectRatio: false,
             indexAxis: 'y',
-            layout: { padding: { right: 100 } },
+            layout: { padding: { right: 30 } }, // PADDING REDUCIDO
             scales: {
                 x: { display: false },
                 y: { grid: { display: false }, ticks: { color: '#000', font: { weight: 'bold', size: 10 } } }
@@ -616,7 +638,7 @@ function actualizarGraficos(g) {
                 responsive: true,
                 maintainAspectRatio: false,
                 indexAxis: 'y',
-                layout: { padding: { right: 120 } },
+                layout: { padding: { right: 40 } }, // PADDING REDUCIDO
                 scales: {
                     x: { display: false },
                     y: { grid: { display: false }, ticks: { color: '#000', font: { weight: 'bold' } } }
